@@ -78,14 +78,13 @@ The exact models are configured in a remote-updatable `models.json` so they can 
 - The transcript can be edited, so the user can fix names and terms before generating notes.
 - **Vocabulary hint:** if slides or a PDF are attached, key terms pulled from them are passed to Whisper as its `initial_prompt` (up to about 200 tokens). This helps it spell technical terms correctly.
 
-## 6. Speaker labelling (diarization)
+## 6. Speaker labelling (diarization), built in M3
 
-- **Engine:** sherpa-onnx speaker diarization, fully on-device. It combines a pyannote segmentation model (about 6 MB) with a speaker-embedding model (a 3D-Speaker/NeMo class model, about 25–40 MB). whisper.cpp's `tinydiarize` is not used, because it only marks where the speaker changes and only works with one special model.
-- **Pipeline:** the diarizer runs on the same 16 kHz WAV, finds speech turns, clusters them into speakers, and assigns each Whisper segment to the speaker it overlaps most. If a segment spans a speaker change, it is split at word timestamps.
-- **Speaker count:** detected automatically by default, and the user can set a known count (for example 2), which is more accurate.
-- **Renaming and roles:** speakers are shown as "Speaker 1, 2, …". The user can rename them and mark one as the **Lecturer**. The app suggests the speaker who talks most as the Lecturer.
-- **Cost:** diarization adds roughly 5–15% to processing time. It is on by default, can be turned off for each recording, and is skipped for recordings under 2 minutes unless the user asks for it.
-- **Effect on notes:** the transcript sent to the notes model includes speaker tags (`[Lecturer]`, `[Student 2]`). This lets the notes include a **Class Q&A** section that pairs student questions with the lecturer's answers.
+- **Engine:** sherpa-onnx v1.13.8 (Apache-2.0), fully on-device: pyannote segmentation 3.0 (int8, 1.5 MB) + 3D-Speaker CAM++ English embeddings (30 MB). Both are downloaded on first use and size-checked. Native libraries: `libsherpa-onnx-jni.so` + `libonnxruntime.so` (arm64 and x86_64).
+- **Long recordings in 10-minute pieces** (`Diarizer`): an 80-minute lecture is ~300 MB of float samples, too much for a phone's heap. Each piece is diarized on its own (automatic speaker count, clustering threshold 0.5). Each local speaker gets a voice embedding from up to 30 s of their longest turns. `SpeakerLinker` links local speakers to global ones by cosine similarity to running-mean centroids (threshold 0.5; two local speakers of a piece never merge).
+- **Assignment:** each transcript segment gets the speaker with the most overlap. Voices under 3 s in total are dropped. Speakers are numbered by talk time; the top one is named "Lecturer" (a suggestion), the others "Speaker N". Rename them, or move the lecturer flag, by tapping a speaker chip.
+- **When:** automatically after transcription for recordings ≥ 2 min (Settings switch, on by default), or via "Label speakers" on the Transcript tab. It shares a heavy-work lock with transcription, so the two never compete for the CPU.
+- **Notes:** with 2+ speakers, transcript lines are tagged `(Lecturer)` / `(Speaker 2)` where the speaker changes. The prompt warns the labels can be wrong and asks for a **Class Q&A** section (`classQA`: question, asked by, answer, timestamp), shown in the Notes tab and the export.
 
 ## 7. Slides and PDF attachments (built in M5)
 

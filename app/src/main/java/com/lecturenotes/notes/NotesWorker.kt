@@ -29,7 +29,15 @@ class NotesWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
         val config = app.aiSettings.configFor(preset).copy(model = notes.model)
         val style = runCatching { NoteStyle.valueOf(notes.style) }.getOrDefault(NoteStyle.STANDARD)
 
-        val transcript = app.db.segments().getFor(recordingId).map { TranscriptLine(it.startMs, it.text) }
+        // With 2+ speakers, label each line where the speaker changes: "(Lecturer) …", "(Speaker 2) …".
+        val speakers = app.db.speakers().getFor(recordingId).associateBy { it.id }
+        val labelled = speakers.size > 1
+        var lastSpeaker: Long? = null
+        val transcript = app.db.segments().getFor(recordingId).map { seg ->
+            val tag = if (labelled && seg.speakerId != null && seg.speakerId != lastSpeaker) speakers[seg.speakerId]?.name else null
+            if (seg.speakerId != null) lastSpeaker = seg.speakerId
+            TranscriptLine(seg.startMs, if (tag != null) "($tag) ${seg.text}" else seg.text)
+        }
         val slides = slideLines(app.db.attachments().pagesFor(recordingId))
         if (transcript.isEmpty() && slides.isEmpty()) return fail("This lecture has no transcript or slide text yet.")
         // With a transcript, slides are reference; without one, the slides are the notes' source.
@@ -56,6 +64,7 @@ class NotesWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
                     rec.title, subject?.name, style, lines, rec.durationMs.coerceAtLeast(lines.last().startMs),
                     systemPrompt = Prompts.systemPrompt(subject),
                     slides = reference,
+                    speakers = labelled,
                 ),
                 PartialRun.parse(notes.partialJson),
             )

@@ -28,7 +28,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -97,7 +96,7 @@ class ProcessWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         if (decoding == null) recordings.setStatus(rec.id, RecordingStatus.QUEUED)
 
         // One transcription at a time: two models in memory at once can exhaust RAM.
-        return whisperLock.withLock {
+        return HeavyWork.lock.withLock {
             val current = recordings.get(rec.id) ?: return@withLock Result.success()
             withContext(Dispatchers.Default) { transcribeLocked(current, model, decoding) }
         }
@@ -156,6 +155,11 @@ class ProcessWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         }
         recordings.setStatus(rec.id, RecordingStatus.TRANSCRIBED)
         recordings.setProgress(rec.id, 1f)
+        // Label speakers next (it queues behind any other heavy work).
+        val final = recordings.get(rec.id)
+        if (final != null && app.settings.autoSpeakers && final.durationMs >= com.lecturenotes.speakers.SpeakerWorker.AUTO_MIN_DURATION_MS) {
+            Jobs.labelSpeakers(applicationContext, rec.id)
+        }
         return Result.success()
     }
 
@@ -245,6 +249,5 @@ class ProcessWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         private const val NOTIFICATION_BASE = 1000
         private const val MAX_CPU_RETRIES = 5
         private val NON_SPEECH = Regex("""^\s*[\[(].*[])]\s*$""")
-        private val whisperLock = Mutex()
     }
 }

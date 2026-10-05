@@ -48,6 +48,9 @@ interface RecordingDao {
     @Query("UPDATE recordings SET transcribedMs = :transcribedMs, progress = :progress WHERE id = :id")
     suspend fun setCheckpoint(id: Long, transcribedMs: Long, progress: Float)
 
+    @Query("UPDATE recordings SET speakerStatus = :status, speakerProgress = :progress WHERE id = :id")
+    suspend fun setSpeakerStatus(id: Long, status: String?, progress: Float?)
+
     @Query("UPDATE recordings SET title = :title WHERE id = :id")
     suspend fun rename(id: Long, title: String)
 
@@ -98,6 +101,28 @@ interface NotesDao {
 
     @Query("DELETE FROM notes WHERE recordingId = :recordingId")
     suspend fun delete(recordingId: Long)
+}
+
+@Dao
+interface SpeakerDao {
+    @Query("SELECT * FROM speakers WHERE recordingId = :recordingId ORDER BY number")
+    fun observeFor(recordingId: Long): Flow<List<Speaker>>
+
+    @Query("SELECT * FROM speakers WHERE recordingId = :recordingId ORDER BY number")
+    suspend fun getFor(recordingId: Long): List<Speaker>
+
+    @Insert
+    suspend fun insert(s: Speaker): Long
+
+    @Query("DELETE FROM speakers WHERE recordingId = :recordingId")
+    suspend fun deleteFor(recordingId: Long)
+
+    @Query("UPDATE speakers SET name = :name WHERE id = :id")
+    suspend fun rename(id: Long, name: String)
+
+    /** Marks one speaker as the lecturer (and no one else in that recording). */
+    @Query("UPDATE speakers SET isLecturer = (id = :id) WHERE recordingId = :recordingId")
+    suspend fun setLecturer(recordingId: Long, id: Long)
 }
 
 @Dao
@@ -308,6 +333,12 @@ interface SegmentDao {
 
     @Query("SELECT * FROM segments WHERE recordingId = :recordingId ORDER BY startMs")
     suspend fun getFor(recordingId: Long): List<Segment>
+
+    @Query("UPDATE segments SET speakerId = :speakerId WHERE id = :id")
+    suspend fun setSpeaker(id: Long, speakerId: Long?)
+
+    @Query("UPDATE segments SET speakerId = NULL WHERE recordingId = :recordingId")
+    suspend fun clearSpeakers(recordingId: Long)
 
     @Query("SELECT text FROM segments WHERE recordingId = :recordingId ORDER BY startMs DESC LIMIT :limit")
     suspend fun lastTexts(recordingId: Long, limit: Int): List<String>

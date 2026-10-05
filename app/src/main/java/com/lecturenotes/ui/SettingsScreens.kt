@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Memory
+import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
@@ -95,6 +96,22 @@ fun SettingsScreen(onBack: () -> Unit, onSpeechModels: () -> Unit, onNotesAi: ()
                 if (ai.isReady) ai.displayName else "Not set up: needed to generate study notes",
                 onNotesAi,
             )
+            val autoSpeakers by context.app.settings.autoSpeakersFlow.collectAsState()
+            Card(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.RecordVoiceOver, null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(16.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Label speakers automatically", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "After transcribing recordings longer than 2 minutes. Adds a few minutes of processing.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    androidx.compose.material3.Switch(checked = autoSpeakers, onCheckedChange = { context.app.settings.setAutoSpeakers(it) })
+                }
+            }
         }
     }
 }

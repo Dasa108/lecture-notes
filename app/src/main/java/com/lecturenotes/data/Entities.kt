@@ -187,6 +187,33 @@ data class Recording(
     val error: String? = null,
     /** The subject (course) this lecture is filed under; null means unfiled. */
     val subjectId: Long? = null,
+    /** Speaker labelling: null = not run, else a SpeakerStatus name. */
+    val speakerStatus: String? = null,
+    /** 0..1 while speaker labelling runs. */
+    val speakerProgress: Float? = null,
+)
+
+enum class SpeakerStatus { QUEUED, RUNNING, DONE, FAILED }
+
+/** A voice found in a recording by speaker labelling. */
+@Entity(
+    tableName = "speakers",
+    foreignKeys = [ForeignKey(
+        entity = Recording::class,
+        parentColumns = ["id"],
+        childColumns = ["recordingId"],
+        onDelete = ForeignKey.CASCADE,
+    )],
+    indices = [Index("recordingId")],
+)
+data class Speaker(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val recordingId: Long,
+    /** 1-based order by talk time (1 = talks most). */
+    val number: Int,
+    val name: String,
+    val isLecturer: Boolean,
+    val talkMs: Long,
 )
 
 @Entity(

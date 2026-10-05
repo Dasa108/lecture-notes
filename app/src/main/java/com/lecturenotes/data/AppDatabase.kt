@@ -35,7 +35,7 @@ class Converters {
     fun stringToNotesStatus(value: String): NotesStatus = NotesStatus.valueOf(value)
 }
 
-@Database(entities = [Recording::class, Segment::class, Subject::class, Notes::class, ReviewCard::class, QuizAttempt::class, Attachment::class, AttachmentPage::class], version = 6)
+@Database(entities = [Recording::class, Segment::class, Subject::class, Notes::class, ReviewCard::class, QuizAttempt::class, Attachment::class, AttachmentPage::class, Speaker::class], version = 7)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun recordings(): RecordingDao
@@ -45,12 +45,28 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun reviewCards(): ReviewCardDao
     abstract fun quizAttempts(): QuizAttemptDao
     abstract fun attachments(): AttachmentDao
+    abstract fun speakers(): SpeakerDao
 
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "lecturenotes.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                 .build()
+
+        /** v7: speaker labels. */
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `recordings` ADD COLUMN `speakerStatus` TEXT")
+                db.execSQL("ALTER TABLE `recordings` ADD COLUMN `speakerProgress` REAL")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `speakers` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`recordingId` INTEGER NOT NULL, `number` INTEGER NOT NULL, `name` TEXT NOT NULL, " +
+                        "`isLecturer` INTEGER NOT NULL, `talkMs` INTEGER NOT NULL, " +
+                        "FOREIGN KEY(`recordingId`) REFERENCES `recordings`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_speakers_recordingId` ON `speakers` (`recordingId`)")
+            }
+        }
 
         /** v6: slides & PDFs attached to lectures. */
         private val MIGRATION_5_6 = object : Migration(5, 6) {

@@ -15,6 +15,7 @@ object Library {
         for (rec in db.recordings().getAll(ids.toList())) {
             Jobs.cancelProcessing(context, rec.id)
             Jobs.cancelNotes(context, rec.id)
+            Jobs.cancelSpeakers(context, rec.id)
             db.attachments().getFor(rec.id).forEach { File(it.path).delete() }
             File(rec.audioPath).delete()
             rec.sourcePath?.let { File(it).delete() }

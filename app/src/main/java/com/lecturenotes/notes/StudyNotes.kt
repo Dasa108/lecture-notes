@@ -35,6 +35,9 @@ data class QuizQuestion(
     val isMultipleChoice: Boolean get() = options.size >= 2
 }
 
+/** A question asked in class and how the lecturer answered it (needs speaker labels). */
+data class ClassQA(val question: String, val askedBy: String, val answer: String, val atMs: Long?)
+
 data class StudyNotes(
     val title: String,
     val overview: String,
@@ -42,6 +45,7 @@ data class StudyNotes(
     val keyTerms: List<KeyTerm>,
     val flashcards: List<Flashcard>,
     val quiz: List<QuizQuestion>,
+    val classQA: List<ClassQA> = emptyList(),
 ) {
     fun toJson(): String = JSONObject().apply {
         put("title", title)
@@ -51,6 +55,7 @@ data class StudyNotes(
         }))
         put("keyTerms", JSONArray(keyTerms.map { JSONObject().put("term", it.term).put("definition", it.definition).putTs(it.atMs, it.page) }))
         put("flashcards", JSONArray(flashcards.map { JSONObject().put("front", it.front).put("back", it.back).putTs(it.atMs, it.page) }))
+        put("classQA", JSONArray(classQA.map { JSONObject().put("question", it.question).put("askedBy", it.askedBy).put("answer", it.answer).putTs(it.atMs) }))
         put("quiz", JSONArray(quiz.map { q ->
             JSONObject().put("question", q.question).put("options", JSONArray(q.options)).put("answer", q.answer)
                 .put("explanation", q.explanation).putTs(q.atMs, q.page)
@@ -72,6 +77,10 @@ data class StudyNotes(
         if (keyTerms.isNotEmpty()) {
             appendLine().appendLine("## Key terms")
             keyTerms.forEach { appendLine("- **${it.term}**: ${it.definition}") }
+        }
+        if (classQA.isNotEmpty()) {
+            appendLine().appendLine("## Class Q&A")
+            classQA.forEach { appendLine("- **Q (${it.askedBy}):** ${it.question}\n  **A:** ${it.answer}") }
         }
         if (flashcards.isNotEmpty()) {
             appendLine().appendLine("## Flashcards")
@@ -113,6 +122,11 @@ data class StudyNotes(
                     val front = o.optString("front").trim()
                     val back = o.optString("back").trim()
                     if (front.isBlank() || back.isBlank()) null else Flashcard(front, back, ts(o), pg(o))
+                },
+                classQA = objects("classQA").mapNotNull { o ->
+                    val q = stripInlineTimestamps(o.optString("question"))
+                    val a = stripInlineTimestamps(o.optString("answer"))
+                    if (q.isBlank() || a.isBlank()) null else ClassQA(q, o.optString("askedBy").trim().ifBlank { "A student" }, a, ts(o))
                 },
                 quiz = objects("quiz").mapNotNull { o ->
                     val q = o.optString("question").trim()

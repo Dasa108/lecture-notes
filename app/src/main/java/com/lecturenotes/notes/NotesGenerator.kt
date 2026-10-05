@@ -19,6 +19,8 @@ data class NotesInput(
     val systemPrompt: String = Prompts.systemPrompt(null),
     /** Slide pages used as reference alongside a transcript (each has [TranscriptLine.page] set). */
     val slides: List<TranscriptLine> = emptyList(),
+    /** Transcript lines carry speaker labels (2+ speakers were found). */
+    val speakers: Boolean = false,
 ) {
     /** Lines are slides when there is no transcript; otherwise slides (if any) are reference. */
     val source: Prompts.Source
@@ -81,7 +83,7 @@ class NotesGenerator(
                 val slides = slideContext(input, input.lines, budget = SINGLE_SLIDE_TOKENS)
                 val json = callJson(
                     input.systemPrompt,
-                    Prompts.request(input.title, input.subject, input.style, whole, counts, null, "", input.source, slides),
+                    Prompts.request(input.title, input.subject, input.style, whole, counts, null, "", input.source, slides, input.speakers),
                     single,
                 )
                 return StudyNotes.parse(json, input.durationMs, input.title)
@@ -135,7 +137,7 @@ class NotesGenerator(
                 input.systemPrompt,
                 Prompts.request(
                     input.title, input.subject, input.style, render(lines), counts, index + 1 to count, range,
-                    input.source, slideContext(input, lines, budget = PART_SLIDE_TOKENS),
+                    input.source, slideContext(input, lines, budget = PART_SLIDE_TOKENS), input.speakers,
                 ),
                 partOutputTokens(input.style),
             )
@@ -234,7 +236,7 @@ class NotesGenerator(
         val template = Prompts.request(
             input.title, input.subject, input.style, transcript = "",
             counts = Prompts.counts(input.style, input.durationMs, whole = true),
-            part = 99 to 99, range = "0:00:00–0:00:00", source = input.source,
+            part = 99 to 99, range = "0:00:00–0:00:00", source = input.source, speakers = input.speakers,
         )
         // Reserve room for the reference slides that each part may carry.
         val slides = if (input.source == Prompts.Source.BOTH) PART_SLIDE_TOKENS else 0
@@ -314,7 +316,7 @@ class NotesGenerator(
 
         private fun concatParts(parts: List<JSONObject>): JSONObject {
             val out = JSONObject()
-            for (key in listOf("sections", "keyTerms", "flashcards", "quiz")) {
+            for (key in listOf("sections", "keyTerms", "flashcards", "quiz", "classQA")) {
                 val arr = JSONArray()
                 parts.forEach { p -> p.optJSONArray(key)?.let { a -> for (i in 0 until a.length()) arr.put(a.get(i)) } }
                 out.put(key, arr)

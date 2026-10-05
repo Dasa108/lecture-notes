@@ -114,6 +114,13 @@ class RecordingViewModel(application: Application, private val id: Long) : Andro
     val cardCounts = app.db.reviewCards().observeCounts(System.currentTimeMillis(), null, id)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val attempts = app.db.quizAttempts().observeFor(id).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val speakers = app.db.speakers().observeFor(id).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun labelSpeakers() = viewModelScope.launch { Jobs.labelSpeakers(app, id) }
+    fun cancelSpeakers() = viewModelScope.launch { Jobs.cancelSpeakers(app, id) }
+    fun renameSpeaker(s: com.lecturenotes.data.Speaker, name: String) = viewModelScope.launch { app.db.speakers().rename(s.id, name) }
+    fun setLecturer(s: com.lecturenotes.data.Speaker) = viewModelScope.launch { app.db.speakers().setLecturer(id, s.id) }
+
     val attachments = app.db.attachments().observeFor(id).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val slides = app.db.attachments().observeSlides(id).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -248,8 +255,8 @@ private const val TAB_TRANSCRIPT = "transcript"
 private const val TAB_SLIDES = "slides"
 private const val TAB_NOTES = "notes"
 
-/** Items above the transcript lines in the Transcript tab (the status header). */
-private const val HEADER_ITEMS = 1
+/** Items above the transcript lines in the Transcript tab (status header, speakers row). */
+private const val HEADER_ITEMS = 2
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -281,6 +288,7 @@ fun RecordingScreen(
     val cardCounts by vm.cardCounts.collectAsState()
     val attempts by vm.attempts.collectAsState()
     val attachments by vm.attachments.collectAsState()
+    val speakers by vm.speakers.collectAsState()
     val slides by vm.slides.collectAsState()
     var tabKey by rememberSaveable { mutableStateOf<String?>(null) }
     val context = LocalContext.current
@@ -456,9 +464,19 @@ fun RecordingScreen(
             modifier = Modifier.fillMaxSize(),
         ) {
             item { StatusHeader(r, segments.isEmpty(), vm::transcribe, vm::cancel, onModels) }
+            item {
+                SpeakersRow(r, speakers, onLabel = { vm.labelSpeakers() }, onCancel = { vm.cancelSpeakers() },
+                    onRename = { s, n -> vm.renameSpeaker(s, n) }, onSetLecturer = { vm.setLecturer(it) })
+            }
+            val speakerById = speakers.associateBy { it.id }
+            val showSpeakers = speakers.size > 1
             itemsIndexed(segments, key = { _, s -> s.id }) { index, seg ->
+                // Name the speaker only where the speaker changes.
+                val speaker = if (showSpeakers) seg.speakerId?.let(speakerById::get) else null
+                val changed = showSpeakers && seg.speakerId != segments.getOrNull(index - 1)?.speakerId
                 SegmentRow(
                     seg,
+                    speaker = speaker.takeIf { changed },
                     active = index == activeIndex && (playing || position > 0),
                     onClick = { vm.seekTo(seg.startMs, play = true) },
                     onLongClick = { editing = seg },
@@ -571,7 +589,15 @@ private fun StatusHeader(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SegmentRow(seg: Segment, active: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
+private fun SegmentRow(seg: Segment, speaker: com.lecturenotes.data.Speaker?, active: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
+    if (speaker != null) {
+        Text(
+            speaker.name,
+            style = MaterialTheme.typography.labelLarge,
+            color = speakerColor(speaker.number),
+            modifier = Modifier.padding(start = 8.dp, top = 10.dp),
+        )
+    }
     Row(
         Modifier
             .fillMaxWidth()

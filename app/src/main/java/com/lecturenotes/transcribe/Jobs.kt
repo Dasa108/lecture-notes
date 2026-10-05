@@ -52,6 +52,24 @@ object Jobs {
         WorkManager.getInstance(context).enqueueUniqueWork("attachment-$attachmentId", ExistingWorkPolicy.KEEP, request)
     }
 
+    fun speakersName(recordingId: Long) = "speakers-$recordingId"
+
+    /** Labels who's speaking in a recording (replacing any earlier labels). */
+    suspend fun labelSpeakers(context: Context, recordingId: Long) {
+        context.app.db.recordings().setSpeakerStatus(recordingId, com.lecturenotes.data.SpeakerStatus.QUEUED.name, null)
+        val request = OneTimeWorkRequestBuilder<com.lecturenotes.speakers.SpeakerWorker>()
+            .setInputData(workDataOf(com.lecturenotes.speakers.SpeakerWorker.KEY_RECORDING_ID to recordingId))
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(speakersName(recordingId), ExistingWorkPolicy.REPLACE, request)
+    }
+
+    suspend fun cancelSpeakers(context: Context, recordingId: Long) {
+        WorkManager.getInstance(context).cancelUniqueWork(speakersName(recordingId))
+        val dao = context.app.db.recordings()
+        val status = dao.get(recordingId)?.speakerStatus
+        if (status == "QUEUED" || status == "RUNNING") dao.setSpeakerStatus(recordingId, null, null)
+    }
+
     fun notesName(recordingId: Long) = "notes-$recordingId"
 
     /** Queues notes generation; the Notes row (style, provider, model) must already exist. */

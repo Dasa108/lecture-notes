@@ -126,6 +126,10 @@ object Prompts {
         }
     """.trimIndent()
 
+    private val SCHEMA_WITH_QA = SCHEMA.trimEnd().removeSuffix("}").trimEnd() + """,
+          "classQA": [ { "question": "what the student asked", "askedBy": "speaker label", "answer": "the lecturer's answer", "at": "mm:ss" } ]
+        }"""
+
     private fun styleRules(style: NoteStyle) = when (style) {
         NoteStyle.BRIEF -> "Style: BRIEF. Only the essentials a student must remember: 2-4 short bullets per section, " +
             "fewer sections, and an \"explain\" item only where a point would otherwise be unclear."
@@ -168,6 +172,8 @@ object Prompts {
         source: Source = Source.TRANSCRIPT,
         /** For [Source.BOTH]: slide text relevant to this transcript, as reference. */
         slideContext: String? = null,
+        /** Transcript lines carry speaker labels like "(Lecturer)": ask for a Class Q&A section. */
+        speakers: Boolean = false,
     ): String = buildString {
         appendLine("Lecture: $lectureTitle")
         if (subject != null) appendLine("Subject: $subject")
@@ -201,9 +207,14 @@ object Prompts {
                     "for a point that appears only on the slides.",
             )
         }
+        if (speakers) {
+            appendLine("Some transcript lines start with a speaker label such as (Lecturer) or (Speaker 2); it applies until the next label.")
+            appendLine("Speaker labels come from automatic voice detection and can be wrong. Put questions students asked, with")
+            appendLine("the lecturer's answer summarised, in \"classQA\"; skip trivial or administrative questions.")
+        }
         appendLine()
         appendLine("Return JSON in exactly this shape:")
-        appendLine(SCHEMA)
+        appendLine(if (speakers) SCHEMA_WITH_QA else SCHEMA)
         appendLine()
         if (source == Source.BOTH && !slideContext.isNullOrBlank()) {
             appendLine("Slides for reference (each starts with [Slide N]):")

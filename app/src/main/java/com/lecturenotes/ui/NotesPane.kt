@@ -268,6 +268,20 @@ private fun LazyListScope.studyNotes(n: StudyNotes, m: NotesPaneModel) {
             }
         }
     }
+    if (n.classQA.isNotEmpty()) {
+        item { SectionTitle("Class Q&A") }
+        items(n.classQA.size) { i ->
+            val qa = n.classQA[i]
+            Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Q · ${qa.askedBy}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                    RefChip(qa.atMs, null, m)
+                }
+                Text(qa.question, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Text(qa.answer, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 2.dp))
+            }
+        }
+    }
     if (n.flashcards.isNotEmpty()) {
         item { SectionTitle("Flashcards · tap to flip") }
         items(n.flashcards.size) { i -> FlipCard(n.flashcards[i].front, n.flashcards[i].back) }

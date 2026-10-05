@@ -23,6 +23,8 @@ class LectureNotesApp : Application() {
         private set
     lateinit var aiSettings: ProviderSettings
         private set
+    lateinit var settings: AppSettings
+        private set
 
     /** Lives as long as the process; for work that must outlive a screen. */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -34,6 +36,7 @@ class LectureNotesApp : Application() {
         db = AppDatabase.create(this)
         models = ModelRepository(this)
         aiSettings = ProviderSettings(this)
+        settings = AppSettings(this)
         createNotificationChannels()
         appScope.launch { recoverInterruptedRecordings() }
         appScope.launch { com.lecturenotes.study.CardSync.backfill(db) }
