@@ -154,6 +154,9 @@ object Prompts {
         )
     }
 
+    /** What the notes are made from. */
+    enum class Source { TRANSCRIPT, SLIDES, BOTH }
+
     fun request(
         lectureTitle: String,
         subject: String?,
@@ -162,11 +165,27 @@ object Prompts {
         counts: Counts,
         part: Pair<Int, Int>?,
         range: String,
+        source: Source = Source.TRANSCRIPT,
+        /** For [Source.BOTH]: slide text relevant to this transcript, as reference. */
+        slideContext: String? = null,
     ): String = buildString {
         appendLine("Lecture: $lectureTitle")
         if (subject != null) appendLine("Subject: $subject")
+        when (source) {
+            Source.SLIDES -> {
+                appendLine("There is no recording of this lecture: the notes come from its slides/document only.")
+                appendLine("Slides are terse. Turn fragments into clear notes and keep every point, but don't pad.")
+            }
+            Source.BOTH -> {
+                appendLine("You have the lecture transcript (the main source) and text from the lecture's slides (reference).")
+                appendLine("Use the slides for correct spelling of terms, formulas and diagram labels, and to fill in what the")
+                appendLine("lecturer pointed at (\"as you can see here\"). Include substantive slide points the lecturer skipped.")
+            }
+            Source.TRANSCRIPT -> Unit
+        }
         if (part != null) {
-            appendLine("This is part ${part.first} of ${part.second} of the lecture (audio $range). Write notes for this part only;")
+            val unit = if (source == Source.SLIDES) "slides" else "audio"
+            appendLine("This is part ${part.first} of ${part.second} of the lecture ($unit $range). Write notes for this part only;")
             appendLine("the parts will be combined later. Keep \"title\" empty and make \"overview\" 1-2 sentences about this part.")
         }
         appendLine(styleRules(style))
@@ -174,12 +193,28 @@ object Prompts {
         appendLine("(quiz mostly multiple choice with 4 options;")
         appendLine("use an empty options list for a short-answer question). Flashcards and questions must test understanding of")
         appendLine("what was actually taught, not trivia about the lecture itself.")
-        appendLine("Every \"at\" value must be a timestamp copied from the transcript line where that idea is discussed.")
+        when (source) {
+            Source.TRANSCRIPT -> appendLine("Every \"at\" value must be a timestamp copied from the transcript line where that idea is discussed.")
+            Source.SLIDES -> appendLine("Every \"at\" value must be \"Slide N\", copied from the slide the idea comes from.")
+            Source.BOTH -> appendLine(
+                "Every \"at\" value must be a timestamp from the transcript where the idea is discussed, or \"Slide N\" " +
+                    "for a point that appears only on the slides.",
+            )
+        }
         appendLine()
         appendLine("Return JSON in exactly this shape:")
         appendLine(SCHEMA)
         appendLine()
-        appendLine("Transcript (each line starts with its [mm:ss] timestamp):")
+        if (source == Source.BOTH && !slideContext.isNullOrBlank()) {
+            appendLine("Slides for reference (each starts with [Slide N]):")
+            appendLine(slideContext)
+            appendLine()
+        }
+        if (source == Source.SLIDES) {
+            appendLine("Slides (each starts with [Slide N]):")
+        } else {
+            appendLine("Transcript (each line starts with its [mm:ss] timestamp):")
+        }
         append(transcript)
     }
 

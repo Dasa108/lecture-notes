@@ -100,6 +100,70 @@ interface NotesDao {
     suspend fun delete(recordingId: Long)
 }
 
+@Dao
+interface AttachmentDao {
+    @Query("SELECT * FROM attachments WHERE recordingId = :recordingId ORDER BY createdAt")
+    fun observeFor(recordingId: Long): Flow<List<Attachment>>
+
+    @Query("SELECT * FROM attachments WHERE recordingId = :recordingId ORDER BY createdAt")
+    suspend fun getFor(recordingId: Long): List<Attachment>
+
+    @Query("SELECT * FROM attachments WHERE id = :id")
+    suspend fun get(id: Long): Attachment?
+
+    @Insert
+    suspend fun insert(a: Attachment): Long
+
+    @Query("UPDATE attachments SET status = :status, error = :error WHERE id = :id")
+    suspend fun setStatus(id: Long, status: AttachmentStatus, error: String? = null)
+
+    @Query("UPDATE attachments SET progress = :progress, pageCount = :pageCount WHERE id = :id")
+    suspend fun setProgress(id: Long, progress: Float, pageCount: Int)
+
+    @Query("DELETE FROM attachments WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    suspend fun insertPage(page: AttachmentPage)
+
+    @Query("DELETE FROM attachment_pages WHERE attachmentId = :attachmentId")
+    suspend fun clearPages(attachmentId: Long)
+
+    @Query("SELECT * FROM attachment_pages WHERE attachmentId = :attachmentId ORDER BY number")
+    fun observePages(attachmentId: Long): Flow<List<AttachmentPage>>
+
+    /** Every extracted page of a lecture's attachments, in attachment then page order. */
+    @Query(
+        """SELECT p.* FROM attachment_pages p JOIN attachments a ON a.id = p.attachmentId
+           WHERE a.recordingId = :recordingId AND a.status = 'DONE'
+           ORDER BY a.createdAt, p.number""",
+    )
+    suspend fun pagesFor(recordingId: Long): List<AttachmentPage>
+
+    /** Pages of a lecture's finished attachments with their file info, numbered like [pagesFor]. */
+    @Query(
+        """SELECT p.*, a.kind AS kind, a.path AS path, a.fileName AS fileName FROM attachment_pages p
+           JOIN attachments a ON a.id = p.attachmentId
+           WHERE a.recordingId = :recordingId AND a.status = 'DONE'
+           ORDER BY a.createdAt, p.number""",
+    )
+    fun observeSlides(recordingId: Long): Flow<List<SlidePage>>
+
+    @Query(
+        """SELECT COUNT(*) FROM attachment_pages p JOIN attachments a ON a.id = p.attachmentId
+           WHERE a.recordingId = :recordingId AND a.status = 'DONE' AND length(p.text) > 0""",
+    )
+    fun observeTextPageCount(recordingId: Long): Flow<Int>
+}
+
+/** A page of an attachment plus what's needed to show it. */
+data class SlidePage(
+    @Embedded val page: AttachmentPage,
+    @ColumnInfo(name = "kind") val kind: AttachmentKind,
+    @ColumnInfo(name = "path") val path: String,
+    @ColumnInfo(name = "fileName") val fileName: String,
+)
+
 /** Counts for a study scope (all, one subject, or one lecture). */
 data class StudyCounts(
     @ColumnInfo(name = "due") val due: Int,

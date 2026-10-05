@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -68,6 +69,8 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import com.lecturenotes.data.Notes
@@ -111,6 +114,18 @@ class RecordingViewModel(application: Application, private val id: Long) : Andro
     val cardCounts = app.db.reviewCards().observeCounts(System.currentTimeMillis(), null, id)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val attempts = app.db.quizAttempts().observeFor(id).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val attachments = app.db.attachments().observeFor(id).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val slides = app.db.attachments().observeSlides(id).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun addAttachment(uri: android.net.Uri, onError: (String) -> Unit) = viewModelScope.launch {
+        runCatching { com.lecturenotes.docs.DocumentImporter.attach(app, uri, id) }
+            .onFailure { onError(it.message ?: "Couldn't add that file") }
+    }
+
+    fun removeAttachment(a: com.lecturenotes.data.Attachment) = viewModelScope.launch {
+        withContext(Dispatchers.IO) { File(a.path).delete() }
+        app.db.attachments().delete(a.id)
+    }
 
     private var player: MediaPlayer? = null
     private var playerPath: String? = null
@@ -229,8 +244,12 @@ class RecordingViewModel(application: Application, private val id: Long) : Andro
     override fun onCleared() = release()
 }
 
-/** Items above the transcript lines in the Transcript tab (subject chip, status header). */
-private const val HEADER_ITEMS = 2
+private const val TAB_TRANSCRIPT = "transcript"
+private const val TAB_SLIDES = "slides"
+private const val TAB_NOTES = "notes"
+
+/** Items above the transcript lines in the Transcript tab (the status header). */
+private const val HEADER_ITEMS = 1
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -261,8 +280,13 @@ fun RecordingScreen(
     val ai by vm.aiConfig.collectAsState()
     val cardCounts by vm.cardCounts.collectAsState()
     val attempts by vm.attempts.collectAsState()
-    var tab by rememberSaveable { mutableStateOf(0) }
+    val attachments by vm.attachments.collectAsState()
+    val slides by vm.slides.collectAsState()
+    var tabKey by rememberSaveable { mutableStateOf<String?>(null) }
     val context = LocalContext.current
+    val addSlides = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.addAttachment(uri) { msg -> android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show() }
+    }
 
     var menuOpen by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
@@ -290,7 +314,9 @@ fun RecordingScreen(
                         DropdownMenuItem(text = { Text("Rename") }, onClick = { menuOpen = false; renaming = true })
                         DropdownMenuItem(
                             text = { Text("Transcribe again") },
-                            enabled = rec?.let { !it.isBusy && it.status != RecordingStatus.RECORDING } == true,
+                            enabled = rec?.let {
+                                !it.isBusy && it.status != RecordingStatus.RECORDING && it.status != RecordingStatus.DOCUMENT
+                            } == true,
                             onClick = { menuOpen = false; vm.retranscribe() },
                         )
                         DropdownMenuItem(text = { Text("Delete") }, onClick = { menuOpen = false; confirmDelete = true })
@@ -307,7 +333,20 @@ fun RecordingScreen(
         },
     ) { padding ->
         val r = rec ?: return@Scaffold
+        // A slides-only lecture has no transcript tab.
+        val tabs = if (r.status == RecordingStatus.DOCUMENT) listOf(TAB_SLIDES, TAB_NOTES) else listOf(TAB_TRANSCRIPT, TAB_SLIDES, TAB_NOTES)
+        val tab = tabKey?.takeIf { it in tabs } ?: tabs.first()
         val listState = rememberLazyListState()
+        val slidesState = rememberLazyListState()
+        var pendingSlide by remember { mutableStateOf<Int?>(null) }
+        // A "Slide N" link in the notes: show the Slides tab scrolled to that slide.
+        LaunchedEffect(pendingSlide, tab, slides.size) {
+            val page = pendingSlide ?: return@LaunchedEffect
+            if (tab == TAB_SLIDES && slides.isNotEmpty()) {
+                slidesState.scrollToItem((1 + attachments.size + page - 1).coerceAtMost(attachments.size + slides.size))
+                pendingSlide = null
+            }
+        }
         val activeIndex by remember(segments) {
             derivedStateOf { segments.indexOfLast { it.startMs <= position } }
         }
@@ -322,24 +361,63 @@ fun RecordingScreen(
         }
         // Keep the line being played in view.
         LaunchedEffect(activeIndex, playing) {
-            if (tab == 0 && playing && activeIndex >= 0) listState.animateScrollToItem(activeIndex + HEADER_ITEMS)
+            if (tab == TAB_TRANSCRIPT && playing && activeIndex >= 0) listState.animateScrollToItem(activeIndex + HEADER_ITEMS)
         }
 
         Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
-        TabRow(selectedTabIndex = tab) {
-            Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Transcript") })
-            Tab(
-                selected = tab == 1, onClick = { tab = 1 },
-                text = { Text(if (notes?.status == NotesStatus.GENERATING || notes?.status == NotesStatus.QUEUED) "Notes…" else "Notes") },
+        // Subject chip above the tabs, so slides-only lectures have it too.
+        Box(Modifier.padding(horizontal = 16.dp)) {
+            val subject = subjects.firstOrNull { it.subject.id == r.subjectId }?.subject
+            AssistChip(
+                onClick = { pickingSubject = true },
+                leadingIcon = {
+                    if (subject != null) SubjectDot(subject.colorIndex)
+                    else Icon(Icons.Outlined.Inbox, null, Modifier.size(16.dp))
+                },
+                label = { Text(subject?.name ?: "Add to a subject") },
             )
         }
-        if (tab == 1) {
+        TabRow(selectedTabIndex = tabs.indexOf(tab)) {
+            tabs.forEach { key ->
+                Tab(
+                    selected = tab == key, onClick = { tabKey = key },
+                    text = {
+                        Text(
+                            when (key) {
+                                TAB_TRANSCRIPT -> "Transcript"
+                                TAB_SLIDES -> if (slides.isEmpty()) "Slides" else "Slides (${slides.size})"
+                                else -> if (notes?.status == NotesStatus.GENERATING || notes?.status == NotesStatus.QUEUED) "Notes…" else "Notes"
+                            },
+                        )
+                    },
+                )
+            }
+        }
+        if (tab == TAB_SLIDES) {
+            LazyColumn(
+                state = slidesState,
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = padding.calculateBottomPadding() + 24.dp),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                slidesPane(
+                    attachments = attachments,
+                    slides = slides,
+                    onAdd = { addSlides.launch(DOCUMENT_MIME_TYPES) },
+                    onRemove = vm::removeAttachment,
+                )
+            }
+            return@Column
+        }
+        if (tab == TAB_NOTES) {
             val model = NotesPaneModel(
                 notes = notes,
                 study = study,
                 ai = ai,
-                hasTranscript = segments.isNotEmpty() && r.status == RecordingStatus.TRANSCRIBED,
-                transcriptChars = segments.sumOf { it.text.length + 8 },
+                hasTranscript = (segments.isNotEmpty() && r.status == RecordingStatus.TRANSCRIBED) ||
+                    slides.any { it.page.text.isNotBlank() },
+                transcriptChars = segments.sumOf { it.text.length + 8 } + slides.sumOf { it.page.text.length + 10 },
+                hasSlides = slides.isNotEmpty(),
+                onOpenSlide = { page -> tabKey = TAB_SLIDES; pendingSlide = page },
                 onGenerate = vm::generateNotes,
                 onCancel = { vm.cancelNotes() },
                 onSeek = { vm.seekTo(it, play = true) },
@@ -377,17 +455,6 @@ fun RecordingScreen(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
-            item {
-                val subject = subjects.firstOrNull { it.subject.id == r.subjectId }?.subject
-                AssistChip(
-                    onClick = { pickingSubject = true },
-                    leadingIcon = {
-                        if (subject != null) SubjectDot(subject.colorIndex)
-                        else Icon(Icons.Outlined.Inbox, null, Modifier.size(16.dp))
-                    },
-                    label = { Text(subject?.name ?: "Add to a subject") },
-                )
-            }
             item { StatusHeader(r, segments.isEmpty(), vm::transcribe, vm::cancel, onModels) }
             itemsIndexed(segments, key = { _, s -> s.id }) { index, seg ->
                 SegmentRow(

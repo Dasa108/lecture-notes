@@ -17,13 +17,25 @@ class Converters {
     fun stringToStatus(value: String): RecordingStatus = RecordingStatus.valueOf(value)
 
     @TypeConverter
+    fun attachmentKindToString(k: AttachmentKind): String = k.name
+
+    @TypeConverter
+    fun stringToAttachmentKind(v: String): AttachmentKind = AttachmentKind.valueOf(v)
+
+    @TypeConverter
+    fun attachmentStatusToString(s: AttachmentStatus): String = s.name
+
+    @TypeConverter
+    fun stringToAttachmentStatus(v: String): AttachmentStatus = AttachmentStatus.valueOf(v)
+
+    @TypeConverter
     fun notesStatusToString(status: NotesStatus): String = status.name
 
     @TypeConverter
     fun stringToNotesStatus(value: String): NotesStatus = NotesStatus.valueOf(value)
 }
 
-@Database(entities = [Recording::class, Segment::class, Subject::class, Notes::class, ReviewCard::class, QuizAttempt::class], version = 5)
+@Database(entities = [Recording::class, Segment::class, Subject::class, Notes::class, ReviewCard::class, QuizAttempt::class, Attachment::class, AttachmentPage::class], version = 6)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun recordings(): RecordingDao
@@ -32,12 +44,33 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun notes(): NotesDao
     abstract fun reviewCards(): ReviewCardDao
     abstract fun quizAttempts(): QuizAttemptDao
+    abstract fun attachments(): AttachmentDao
 
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "lecturenotes.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .build()
+
+        /** v6: slides & PDFs attached to lectures. */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `attachments` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`recordingId` INTEGER NOT NULL, `kind` TEXT NOT NULL, `fileName` TEXT NOT NULL, `path` TEXT NOT NULL, " +
+                        "`status` TEXT NOT NULL, `pageCount` INTEGER NOT NULL, `progress` REAL NOT NULL, `error` TEXT, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "FOREIGN KEY(`recordingId`) REFERENCES `recordings`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_attachments_recordingId` ON `attachments` (`recordingId`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `attachment_pages` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`attachmentId` INTEGER NOT NULL, `number` INTEGER NOT NULL, `text` TEXT NOT NULL, `ocr` INTEGER NOT NULL, " +
+                        "FOREIGN KEY(`attachmentId`) REFERENCES `attachments`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_attachment_pages_attachmentId_number` ON `attachment_pages` (`attachmentId`, `number`)")
+            }
+        }
 
         /** v5: study mode (flashcard review schedule, quiz scores). */
         private val MIGRATION_4_5 = object : Migration(4, 5) {

@@ -57,7 +57,10 @@ class NotesPaneModel(
     val notes: Notes?,
     val study: StudyNotes?,
     val ai: ProviderConfig,
+    /** Whether there's anything to make notes from: a finished transcript or slide text. */
     val hasTranscript: Boolean,
+    val hasSlides: Boolean,
+    val onOpenSlide: (Int) -> Unit,
     val transcriptChars: Int,
     val onGenerate: (NoteStyle) -> Unit,
     val onCancel: () -> Unit,
@@ -77,7 +80,7 @@ fun LazyListScope.notesPane(m: NotesPaneModel) {
     val notes = m.notes
     when {
         !m.hasTranscript -> item {
-            Hint("Study notes can be made once this lecture has a transcript.")
+            Hint("Notes can be made once this lecture has a transcript, or from its slides: add them in the Slides tab.")
         }
         !m.ai.isReady -> item {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
@@ -165,7 +168,7 @@ private fun GenerateCard(m: NotesPaneModel, retry: Boolean) {
             val tokens = NotesGenerator.estimateTokens("x".repeat(m.transcriptChars))
             val words = m.transcriptChars / 6
             Text(
-                "Sends about ${"%,d".format(words)} words (~${"%,d".format(tokens)} tokens) of transcript to " +
+                "Sends about ${"%,d".format(words)} words (~${"%,d".format(tokens)} tokens) of lecture text to " +
                     "${m.ai.preset.label} (${m.ai.model}). " +
                     if (m.ai.preset.isFree) "Free within its limits." else "Billed to your ${m.ai.preset.label} account.",
                 style = MaterialTheme.typography.bodySmall,
@@ -224,7 +227,7 @@ private fun LazyListScope.studyNotes(n: StudyNotes, m: NotesPaneModel) {
         Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(s.heading, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                s.atMs?.let { TimeChip(it, m.onSeek) }
+                RefChip(s.atMs, s.page, m)
             }
             s.bullets.forEach { b ->
                 Row(Modifier.padding(top = 4.dp)) {
@@ -261,7 +264,7 @@ private fun LazyListScope.studyNotes(n: StudyNotes, m: NotesPaneModel) {
                     Text(t.term, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                     Text(t.definition, style = MaterialTheme.typography.bodyMedium)
                 }
-                t.atMs?.let { TimeChip(it, m.onSeek) }
+                RefChip(t.atMs, t.page, m)
             }
         }
     }
@@ -271,7 +274,7 @@ private fun LazyListScope.studyNotes(n: StudyNotes, m: NotesPaneModel) {
     }
     if (n.quiz.isNotEmpty()) {
         item { SectionTitle("Practice quiz") }
-        itemsIndexed(n.quiz) { i, q -> QuizCard(i + 1, q, m.onSeek) }
+        itemsIndexed(n.quiz) { i, q -> QuizCard(i + 1, q, m) }
     }
     item {
         HorizontalDivider(Modifier.padding(vertical = 16.dp))
@@ -344,10 +347,12 @@ private fun SectionTitle(text: String) {
     )
 }
 
+/** A tappable source link: a time plays the recording there, "Slide N" opens that slide. */
 @Composable
-private fun TimeChip(ms: Long, onSeek: (Long) -> Unit) {
-    TextButton(onClick = { onSeek(ms) }) {
-        Text(formatTimestamp(ms), style = MaterialTheme.typography.labelMedium)
+private fun RefChip(atMs: Long?, page: Int?, m: NotesPaneModel) {
+    when {
+        atMs != null -> TextButton(onClick = { m.onSeek(atMs) }) { Text(formatTimestamp(atMs), style = MaterialTheme.typography.labelMedium) }
+        page != null && m.hasSlides -> TextButton(onClick = { m.onOpenSlide(page) }) { Text("Slide $page", style = MaterialTheme.typography.labelMedium) }
     }
 }
 
@@ -372,7 +377,7 @@ private fun FlipCard(front: String, back: String) {
 }
 
 @Composable
-private fun QuizCard(number: Int, q: QuizQuestion, onSeek: (Long) -> Unit) {
+private fun QuizCard(number: Int, q: QuizQuestion, m: NotesPaneModel) {
     var chosen by rememberSaveable(q.question) { mutableStateOf<String?>(null) }
     var revealed by rememberSaveable(q.question) { mutableStateOf(false) }
     val correctColor = Color(0xFF2E7D32)
@@ -416,8 +421,9 @@ private fun QuizCard(number: Int, q: QuizQuestion, onSeek: (Long) -> Unit) {
                     Text("Answer: ${q.answer}", fontWeight = FontWeight.SemiBold)
                 }
                 if (q.explanation.isNotBlank()) Text(q.explanation, style = MaterialTheme.typography.bodyMedium)
-                q.atMs?.let {
-                    TextButton(onClick = { onSeek(it) }) { Text("Hear it in the lecture (${formatTimestamp(it)})") }
+                when {
+                    q.atMs != null -> TextButton(onClick = { m.onSeek(q.atMs) }) { Text("Hear it in the lecture (${formatTimestamp(q.atMs)})") }
+                    q.page != null && m.hasSlides -> TextButton(onClick = { m.onOpenSlide(q.page) }) { Text("See slide ${q.page}") }
                 }
             }
         }

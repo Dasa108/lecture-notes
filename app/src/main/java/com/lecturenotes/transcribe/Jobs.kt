@@ -45,6 +45,13 @@ object Jobs {
         waiting.filter { it.durationMs == 0L || it.transcribedMs < it.durationMs }.forEach { process(context, it.id) }
     }
 
+    fun extractAttachment(context: Context, attachmentId: Long) {
+        val request = OneTimeWorkRequestBuilder<com.lecturenotes.docs.AttachmentWorker>()
+            .setInputData(workDataOf(com.lecturenotes.docs.AttachmentWorker.KEY_ATTACHMENT_ID to attachmentId))
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork("attachment-$attachmentId", ExistingWorkPolicy.KEEP, request)
+    }
+
     fun notesName(recordingId: Long) = "notes-$recordingId"
 
     /** Queues notes generation; the Notes row (style, provider, model) must already exist. */

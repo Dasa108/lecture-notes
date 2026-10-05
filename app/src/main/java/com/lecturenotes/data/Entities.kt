@@ -18,6 +18,9 @@ enum class RecordingStatus {
     TRANSCRIBING,
     TRANSCRIBED,
     FAILED,
+
+    /** A lecture made from slides/documents only; it has no audio (audioPath is empty). */
+    DOCUMENT,
 }
 
 enum class NotesStatus { QUEUED, GENERATING, DONE, FAILED }
@@ -49,6 +52,54 @@ data class Notes(
     /** Human-readable progress ("Writing notes: part 2 of 5…") or the error when FAILED. */
     val message: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
+)
+
+enum class AttachmentKind { PDF, PPTX, IMAGE, TEXT }
+enum class AttachmentStatus { PENDING, EXTRACTING, DONE, FAILED }
+
+/** Slides, a PDF, photos of the board, or a text file attached to a lecture. */
+@Entity(
+    tableName = "attachments",
+    foreignKeys = [ForeignKey(
+        entity = Recording::class,
+        parentColumns = ["id"],
+        childColumns = ["recordingId"],
+        onDelete = ForeignKey.CASCADE,
+    )],
+    indices = [Index("recordingId")],
+)
+data class Attachment(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val recordingId: Long,
+    val kind: AttachmentKind,
+    val fileName: String,
+    /** The app's own copy of the file. */
+    val path: String,
+    val status: AttachmentStatus = AttachmentStatus.PENDING,
+    val pageCount: Int = 0,
+    val progress: Float = 0f,
+    val error: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+/** Text of one page/slide of an attachment. [number] is the slide/page number shown to the student. */
+@Entity(
+    tableName = "attachment_pages",
+    foreignKeys = [ForeignKey(
+        entity = Attachment::class,
+        parentColumns = ["id"],
+        childColumns = ["attachmentId"],
+        onDelete = ForeignKey.CASCADE,
+    )],
+    indices = [Index(value = ["attachmentId", "number"], unique = true)],
+)
+data class AttachmentPage(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val attachmentId: Long,
+    val number: Int,
+    val text: String,
+    /** True if the text came from OCR (a scan or photo) rather than the file's text layer. */
+    val ocr: Boolean = false,
 )
 
 /** A flashcard from a lecture's notes, with its spaced-repetition schedule. */

@@ -314,7 +314,14 @@ fun HomeScreen(
     var importing by remember { mutableStateOf(false) }
     fun import(uri: Uri, title: String? = null, cleanup: () -> Unit = {}) = scope.launch {
         importing = true
-        runCatching { Importer.import(context, uri, title, vm.targetSubjectId) }
+        runCatching {
+            if (com.lecturenotes.docs.DocumentImporter.isDocument(context, uri)) {
+                // Slides/PDF/photo/text: a lecture without a recording.
+                com.lecturenotes.docs.DocumentImporter.importAsLecture(context, uri, vm.targetSubjectId)
+            } else {
+                Importer.import(context, uri, title, vm.targetSubjectId)
+            }
+        }
             .onSuccess { onOpen(it, null) }
             .onFailure { Toast.makeText(context, "Import failed: ${it.message}", Toast.LENGTH_LONG).show() }
         cleanup()
@@ -369,8 +376,8 @@ fun HomeScreen(
                         IconButton(onClick = ::recordVideo) {
                             Icon(Icons.Outlined.Videocam, contentDescription = "Record video")
                         }
-                        IconButton(onClick = { pickFile.launch(arrayOf("audio/*", "video/*")) }) {
-                            Icon(Icons.Outlined.FileUpload, contentDescription = "Import audio or video file")
+                        IconButton(onClick = { pickFile.launch(arrayOf("audio/*", "video/*") + DOCUMENT_MIME_TYPES) }) {
+                            Icon(Icons.Outlined.FileUpload, contentDescription = "Import audio, video, slides or PDF")
                         }
                         IconButton(onClick = onSettings) {
                             Icon(Icons.Outlined.Settings, contentDescription = "Settings")
@@ -409,7 +416,7 @@ fun HomeScreen(
             ) {
                 if (importing) item {
                     Column(Modifier.padding(vertical = 4.dp)) {
-                        Text("Extracting audio…", style = MaterialTheme.typography.labelMedium)
+                        Text("Importing…", style = MaterialTheme.typography.labelMedium)
                         Spacer(Modifier.height(6.dp))
                         LinearProgressIndicator(Modifier.fillMaxWidth())
                     }
@@ -437,7 +444,7 @@ fun HomeScreen(
                         )
                         content.totalCount == 0 -> EmptyState(
                             Icons.Filled.Mic, "No recordings yet",
-                            "Record a lecture, film one with the camera button, or import an audio or video file.",
+                            "Record a lecture, film one with the camera button, or import audio, video, slides or a PDF.",
                         )
                         current != null -> EmptyState(
                             Icons.Outlined.Folder, "No lectures in ${current.subject.name} yet",

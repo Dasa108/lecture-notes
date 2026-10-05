@@ -29,8 +29,12 @@ class NotesWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
         val config = app.aiSettings.configFor(preset).copy(model = notes.model)
         val style = runCatching { NoteStyle.valueOf(notes.style) }.getOrDefault(NoteStyle.STANDARD)
 
-        val lines = app.db.segments().getFor(recordingId).map { TranscriptLine(it.startMs, it.text) }
-        if (lines.isEmpty()) return fail("This lecture has no transcript yet.")
+        val transcript = app.db.segments().getFor(recordingId).map { TranscriptLine(it.startMs, it.text) }
+        val slides = slideLines(app.db.attachments().pagesFor(recordingId))
+        if (transcript.isEmpty() && slides.isEmpty()) return fail("This lecture has no transcript or slide text yet.")
+        // With a transcript, slides are reference; without one, the slides are the notes' source.
+        val lines = transcript.ifEmpty { slides }
+        val reference = if (transcript.isEmpty()) emptyList() else slides
         val subject = rec.subjectId?.let { app.db.subjects().get(it) }
 
         setForeground(foregroundInfo(null))
@@ -51,6 +55,7 @@ class NotesWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
                 NotesInput(
                     rec.title, subject?.name, style, lines, rec.durationMs.coerceAtLeast(lines.last().startMs),
                     systemPrompt = Prompts.systemPrompt(subject),
+                    slides = reference,
                 ),
                 PartialRun.parse(notes.partialJson),
             )
@@ -73,6 +78,20 @@ class NotesWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
         return Result.failure()
     }
 
+    companion object {
+        const val KEY_RECORDING_ID = "recording_id"
+        private const val TAG = "NotesWorker"
+        private const val NOTIFICATION_BASE = 5000
+
+        /**
+         * Slide lines for notes. Slides are numbered 1..n across all of a lecture's files in order,
+         * the same numbering the Slides tab shows; blank pages keep their number but are skipped.
+         */
+        fun slideLines(pages: List<com.lecturenotes.data.AttachmentPage>): List<TranscriptLine> =
+            pages.mapIndexedNotNull { i, p -> p.text.takeIf { it.isNotBlank() }?.let { TranscriptLine(0, it, page = i + 1) } }
+    }
+
+
     private fun foregroundInfo(progress: Float?): ForegroundInfo {
         val ctx = applicationContext
         val determinate = progress != null && progress >= 0f
@@ -86,9 +105,4 @@ class NotesWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
         return ForegroundInfo(NOTIFICATION_BASE + recordingId.toInt(), notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
     }
 
-    companion object {
-        const val KEY_RECORDING_ID = "recording_id"
-        private const val TAG = "NotesWorker"
-        private const val NOTIFICATION_BASE = 5000
-    }
 }

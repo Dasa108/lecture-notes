@@ -90,20 +90,18 @@ The exact models are configured in a remote-updatable `models.json` so they can 
 - **Cost:** diarization adds roughly 5–15% to processing time. It is on by default, can be turned off for each recording, and is skipped for recordings under 2 minutes unless the user asks for it.
 - **Effect on notes:** the transcript sent to the notes model includes speaker tags (`[Lecturer]`, `[Student 2]`). This lets the notes include a **Class Q&A** section that pairs student questions with the lecturer's answers.
 
-## 7. Slides and PDF attachments (optional)
+## 7. Slides and PDF attachments (built in M5)
 
-- **Supported inputs:** PDF, PPTX and images (photos of a whiteboard or slides). Each recording can have one or more.
-- **Text extraction, all on-device:**
-  - PDF: the text layer via PdfBox-Android. If a page has no text layer, it is rendered with `PdfRenderer` and read with OCR.
-  - PPTX: the file is unzipped and the slide XML parsed (`a:t` text runs) in slide order, including speaker notes.
-  - Images and scanned pages: ML Kit Text Recognition (on-device).
-- **Alignment:** each slide or page is matched to transcript sections by keyword overlap, or by embedding similarity if a local embedding model is present. The user can correct the matches manually.
-- **How it's used:**
-  1. Vocabulary hint for Whisper (see §5).
-  2. During the notes map step, each section's prompt includes the text of its matched slides. The prompt tells the model to use the slides for structure and correct spelling, and to treat the spoken content as the main source.
-  3. Outline entries can show the matched slide's thumbnail.
-- **Cloud engine:** sends the extracted slide text only if the user agrees in the same confirmation as the transcript. An advanced option sends the PDF itself so the model can read diagrams (Claude accepts PDFs).
-- **Local engine:** slide text is trimmed to fit the section's context budget, with at most about 500 tokens of slide text per section.
+- **A lecture doesn't need a recording.** Importing a PDF, a PowerPoint (.pptx), photos or a .txt/.md file from the home screen (or sharing one to the app) creates a **slides-only lecture** (`RecordingStatus.DOCUMENT`, no audio). Slides can also be added to any recording from its **Slides** tab.
+- **Text extraction, all on-device** (`AttachmentWorker`):
+  - PDF: the text layer via PdfBox-Android. Pages with under 20 characters of text (scans) are rendered with `PdfRenderer` and read with ML Kit OCR (bundled Latin model, offline).
+  - PPTX: the `<a:t>` runs of each `slideN.xml` in order, plus speaker notes from `notesSlideN.xml`.
+  - Images: ML Kit OCR. Text files are split into ~250-word pages.
+  - Tested on-device: a text PDF (4/4 exact), a scanned PDF (2/2 via OCR, one letter wrong), a PPTX (4/4 including notes).
+- **Slides tab:** attachments with progress and remove; each page rendered (PDF/image) with its extracted text. Slides are numbered 1..n across all of a lecture's files; notes use the same numbers.
+- **Notes from slides only:** the prompt says there's no recording, asks the model to turn terse fragments into clear notes, and requires `"at": "Slide N"`. Large decks are split by slides like transcripts. Note items carry a `page` alongside `atMs`, and "Slide N" chips open that slide.
+- **Recording + slides:** the transcript is the main source. For each part, `SlidePicker` adds the most relevant slides (TF-IDF word overlap, up to ~700 tokens; ~4k in one-pass mode) as reference for correct terms, formulas and what was shown. Points only on slides are cited as "Slide N".
+- **Not done yet:** using slide terms as a Whisper vocabulary hint (it needs testing, since a sentence-style prompt previously hurt transcription), and searching inside slide text.
 
 ## 8. Notes generation
 

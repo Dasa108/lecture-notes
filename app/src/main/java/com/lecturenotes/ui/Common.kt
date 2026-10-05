@@ -21,6 +21,7 @@ fun statusLabel(rec: Recording): String = when (rec.status) {
     RecordingStatus.TRANSCRIBING -> "Transcribing ${(rec.progress * 100).toInt()}%"
     RecordingStatus.TRANSCRIBED -> "Transcribed"
     RecordingStatus.FAILED -> "Failed"
+    RecordingStatus.DOCUMENT -> "Slides only"
 }
 
 val Recording.isBusy: Boolean

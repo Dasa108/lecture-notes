@@ -47,7 +47,13 @@ class MainActivity : ComponentActivity() {
         if (intent?.action != Intent.ACTION_SEND) return
         val uri = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java) ?: return
         lifecycleScope.launch {
-            runCatching { Importer.import(this@MainActivity, uri) }
+            runCatching {
+                if (com.lecturenotes.docs.DocumentImporter.isDocument(this@MainActivity, uri)) {
+                    com.lecturenotes.docs.DocumentImporter.importAsLecture(this@MainActivity, uri)
+                } else {
+                    Importer.import(this@MainActivity, uri)
+                }
+            }
                 .onSuccess { openRecording.value = it }
                 .onFailure { Toast.makeText(this@MainActivity, it.message, Toast.LENGTH_LONG).show() }
         }

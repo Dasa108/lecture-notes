@@ -9,6 +9,7 @@
     <string name="stop">Stop</string>
     <string name="preparing">Preparing…</string>
     <string name="transcribing">Transcribing</string>
+    <string name="reading_slides">Reading slides</string>
     <string name="writing_notes">Writing study notes</string>
     <string name="downloading_model">Downloading %1$s speech model</string>
 </resources>

@@ -6,7 +6,8 @@ import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
 
-data class TranscriptLine(val startMs: Long, val text: String)
+/** One line of source: a transcript segment at [startMs], or (when [page] is set) the text of slide [page]. */
+data class TranscriptLine(val startMs: Long, val text: String, val page: Int? = null)
 
 data class NotesInput(
     val title: String,
@@ -16,7 +17,17 @@ data class NotesInput(
     val durationMs: Long,
     /** System message: rules, subject guidance and the JSON rule (see [Prompts.systemPrompt]). */
     val systemPrompt: String = Prompts.systemPrompt(null),
-)
+    /** Slide pages used as reference alongside a transcript (each has [TranscriptLine.page] set). */
+    val slides: List<TranscriptLine> = emptyList(),
+) {
+    /** Lines are slides when there is no transcript; otherwise slides (if any) are reference. */
+    val source: Prompts.Source
+        get() = when {
+            lines.all { it.page != null } -> Prompts.Source.SLIDES
+            slides.isNotEmpty() -> Prompts.Source.BOTH
+            else -> Prompts.Source.TRANSCRIPT
+        }
+}
 
 /**
  * Resumable progress of a split (map) run: the per-part token budget it was planned with,
@@ -61,17 +72,24 @@ class NotesGenerator(
         overhead = promptOverhead(input)
         val whole = render(input.lines)
         val single = singleOutputTokens(input.style)
-        if (resume == null && estimateTokens(whole) + overhead + single <= requestLimit) {
+        // One pass may carry more reference slides than a part does; account for the difference.
+        val singleSlides = if (input.source == Prompts.Source.BOTH) SINGLE_SLIDE_TOKENS - PART_SLIDE_TOKENS else 0
+        if (resume == null && estimateTokens(whole) + overhead + singleSlides + single <= requestLimit) {
             try {
                 progress.status("Writing notes…", null)
                 val counts = Prompts.counts(input.style, input.durationMs, whole = true)
-                val json = callJson(input.systemPrompt, Prompts.request(input.title, input.subject, input.style, whole, counts, null, ""), single)
+                val slides = slideContext(input, input.lines, budget = SINGLE_SLIDE_TOKENS)
+                val json = callJson(
+                    input.systemPrompt,
+                    Prompts.request(input.title, input.subject, input.style, whole, counts, null, "", input.source, slides),
+                    single,
+                )
                 return StudyNotes.parse(json, input.durationMs, input.title)
             } catch (e: LlmException.TooLarge) {
-                learnLimit(e, estimateTokens(whole) + overhead + single)
+                learnLimit(e, estimateTokens(whole) + overhead + singleSlides + single)
             } catch (e: LlmException.Truncated) {
                 // The whole lecture's notes didn't fit in one reply: split instead.
-                requestLimit = minOf(requestLimit, estimateTokens(whole) + overhead + single - 1)
+                requestLimit = minOf(requestLimit, estimateTokens(whole) + overhead + singleSlides + single - 1)
             }
         }
         return generateInParts(input, resume)
@@ -107,12 +125,18 @@ class NotesGenerator(
         val startMs = lines.first().startMs
         // Segments are rarely longer than ~15 s, so this is a close upper bound for the part's end.
         val endMs = (lines.last().startMs + 15_000).coerceAtMost(input.durationMs).coerceAtLeast(startMs)
-        val counts = Prompts.counts(input.style, endMs - startMs, whole = false)
-        val range = "${formatTimestamp(startMs)}–${formatTimestamp(endMs)}"
+        val isSlides = input.source == Prompts.Source.SLIDES
+        // For slides, size the quiz/flashcard counts by how much text the part has (~150 words ≈ 1 minute of speech).
+        val span = if (isSlides) lines.sumOf { it.text.length } / 900L * 60_000L else endMs - startMs
+        val counts = Prompts.counts(input.style, span, whole = false)
+        val range = if (isSlides) "${lines.first().page}–${lines.last().page}" else "${formatTimestamp(startMs)}–${formatTimestamp(endMs)}"
         return try {
             callJson(
                 input.systemPrompt,
-                Prompts.request(input.title, input.subject, input.style, render(lines), counts, index + 1 to count, range),
+                Prompts.request(
+                    input.title, input.subject, input.style, render(lines), counts, index + 1 to count, range,
+                    input.source, slideContext(input, lines, budget = PART_SLIDE_TOKENS),
+                ),
                 partOutputTokens(input.style),
             )
         } catch (e: LlmException.Truncated) {
@@ -210,9 +234,18 @@ class NotesGenerator(
         val template = Prompts.request(
             input.title, input.subject, input.style, transcript = "",
             counts = Prompts.counts(input.style, input.durationMs, whole = true),
-            part = 99 to 99, range = "0:00:00–0:00:00",
+            part = 99 to 99, range = "0:00:00–0:00:00", source = input.source,
         )
-        return estimateTokens(input.systemPrompt) + estimateTokens(template) + OVERHEAD_MARGIN
+        // Reserve room for the reference slides that each part may carry.
+        val slides = if (input.source == Prompts.Source.BOTH) PART_SLIDE_TOKENS else 0
+        return estimateTokens(input.systemPrompt) + estimateTokens(template) + slides + OVERHEAD_MARGIN
+    }
+
+    /** Reference slides for a stretch of transcript: the most relevant ones, within [budget] tokens. */
+    private fun slideContext(input: NotesInput, lines: List<TranscriptLine>, budget: Int): String? {
+        if (input.source != Prompts.Source.BOTH) return null
+        val picked = SlidePicker.pick(lines.joinToString(" ") { it.text }, input.slides, budget)
+        return picked.takeIf { it.isNotEmpty() }?.let(::render)
     }
 
     // Notes cover the lecture fully and add explanations, so replies are long.
@@ -229,6 +262,10 @@ class NotesGenerator(
     }
 
     companion object {
+        /** Reference slide text per request when a lecture has both a recording and slides. */
+        private const val PART_SLIDE_TOKENS = 700
+        private const val SINGLE_SLIDE_TOKENS = 4_000
+
         /** Headroom for tokenizer differences and the JSON-repair reminder. */
         private const val OVERHEAD_MARGIN = 150
         private const val MIN_PART_TOKENS = 800
@@ -239,7 +276,10 @@ class NotesGenerator(
         /** ~4 characters per token for English; slightly pessimistic to leave headroom. */
         fun estimateTokens(text: String) = text.length * 2 / 7 + 1
 
-        fun render(lines: List<TranscriptLine>) = lines.joinToString("\n") { "[${formatTimestamp(it.startMs)}] ${it.text}" }
+        fun render(lines: List<TranscriptLine>) = lines.joinToString("\n") { line ->
+            if (line.page != null) "[Slide ${line.page}] ${line.text.replace("\n", " / ")}"
+            else "[${formatTimestamp(line.startMs)}] ${line.text}"
+        }
 
         /** Splits lines into consecutive parts of at most [budget] estimated tokens. */
         fun split(lines: List<TranscriptLine>, budget: Int): List<List<TranscriptLine>> {

@@ -9,11 +9,20 @@ enum class NoteStyle(val label: String, val description: String) {
     DETAILED("Detailed", "Close to the full lecture, with explanations and examples."),
 }
 
-/** Timestamps are ms from the start of the lecture, or null if the AI gave none/an invalid one. */
+/**
+ * Where a note comes from: [atMs] is a time in the recording, [page] a slide/page number.
+ * Either can be null if the AI gave none or an invalid one.
+ */
 /** [bullets]: what the lecture said. [explain]: the AI's own additions to deepen understanding. */
-data class NoteSection(val heading: String, val atMs: Long?, val bullets: List<String>, val explain: List<String> = emptyList())
-data class KeyTerm(val term: String, val definition: String, val atMs: Long?)
-data class Flashcard(val front: String, val back: String, val atMs: Long?)
+data class NoteSection(
+    val heading: String,
+    val atMs: Long?,
+    val bullets: List<String>,
+    val explain: List<String> = emptyList(),
+    val page: Int? = null,
+)
+data class KeyTerm(val term: String, val definition: String, val atMs: Long?, val page: Int? = null)
+data class Flashcard(val front: String, val back: String, val atMs: Long?, val page: Int? = null)
 data class QuizQuestion(
     val question: String,
     /** Empty for short-answer questions. */
@@ -21,6 +30,7 @@ data class QuizQuestion(
     val answer: String,
     val explanation: String,
     val atMs: Long?,
+    val page: Int? = null,
 ) {
     val isMultipleChoice: Boolean get() = options.size >= 2
 }
@@ -37,13 +47,13 @@ data class StudyNotes(
         put("title", title)
         put("overview", overview)
         put("sections", JSONArray(sections.map { s ->
-            JSONObject().put("heading", s.heading).putTs(s.atMs).put("bullets", JSONArray(s.bullets)).put("explain", JSONArray(s.explain))
+            JSONObject().put("heading", s.heading).putTs(s.atMs, s.page).put("bullets", JSONArray(s.bullets)).put("explain", JSONArray(s.explain))
         }))
-        put("keyTerms", JSONArray(keyTerms.map { JSONObject().put("term", it.term).put("definition", it.definition).putTs(it.atMs) }))
-        put("flashcards", JSONArray(flashcards.map { JSONObject().put("front", it.front).put("back", it.back).putTs(it.atMs) }))
+        put("keyTerms", JSONArray(keyTerms.map { JSONObject().put("term", it.term).put("definition", it.definition).putTs(it.atMs, it.page) }))
+        put("flashcards", JSONArray(flashcards.map { JSONObject().put("front", it.front).put("back", it.back).putTs(it.atMs, it.page) }))
         put("quiz", JSONArray(quiz.map { q ->
             JSONObject().put("question", q.question).put("options", JSONArray(q.options)).put("answer", q.answer)
-                .put("explanation", q.explanation).putTs(q.atMs)
+                .put("explanation", q.explanation).putTs(q.atMs, q.page)
         }))
     }.toString()
 
@@ -52,7 +62,7 @@ data class StudyNotes(
         appendLine("# $title")
         if (overview.isNotBlank()) appendLine().appendLine(overview)
         for (s in sections) {
-            appendLine().appendLine("## ${s.heading}${s.atMs?.let { " (${formatTimestamp(it)})" } ?: ""}")
+            appendLine().appendLine("## ${s.heading}${refLabel(s.atMs, s.page)?.let { " ($it)" } ?: ""}")
             s.bullets.forEach { appendLine("- $it") }
             if (s.explain.isNotEmpty()) {
                 appendLine().appendLine("*Going deeper (AI explanation, not from the lecture):*")
@@ -81,6 +91,7 @@ data class StudyNotes(
         /** Lenient parse of the AI's JSON (or our own stored JSON). [durationMs] bounds timestamps. */
         fun parse(json: JSONObject, durationMs: Long, fallbackTitle: String): StudyNotes {
             fun ts(o: JSONObject) = parseTimestamp(o.opt("at"), durationMs)
+            fun pg(o: JSONObject) = parsePage(o.opt("at"))
             fun strings(a: JSONArray?) = a?.let { arr ->
                 (0 until arr.length()).mapNotNull { stripInlineTimestamps(arr.optString(it)).ifBlank { null } }
             }.orEmpty()
@@ -92,22 +103,22 @@ data class StudyNotes(
                     val heading = o.optString("heading").trim()
                     val bullets = strings(o.optJSONArray("bullets"))
                     val explain = strings(o.optJSONArray("explain"))
-                    if (heading.isBlank() && bullets.isEmpty()) null else NoteSection(heading.ifBlank { "Notes" }, ts(o), bullets, explain)
+                    if (heading.isBlank() && bullets.isEmpty()) null else NoteSection(heading.ifBlank { "Notes" }, ts(o), bullets, explain, pg(o))
                 },
                 keyTerms = objects("keyTerms").mapNotNull { o ->
                     val term = o.optString("term").trim()
-                    if (term.isBlank()) null else KeyTerm(term, stripInlineTimestamps(o.optString("definition")), ts(o))
+                    if (term.isBlank()) null else KeyTerm(term, stripInlineTimestamps(o.optString("definition")), ts(o), pg(o))
                 },
                 flashcards = objects("flashcards").mapNotNull { o ->
                     val front = o.optString("front").trim()
                     val back = o.optString("back").trim()
-                    if (front.isBlank() || back.isBlank()) null else Flashcard(front, back, ts(o))
+                    if (front.isBlank() || back.isBlank()) null else Flashcard(front, back, ts(o), pg(o))
                 },
                 quiz = objects("quiz").mapNotNull { o ->
                     val q = o.optString("question").trim()
                     val answer = o.optString("answer").trim()
                     if (q.isBlank() || answer.isBlank()) null
-                    else QuizQuestion(q, strings(o.optJSONArray("options")), answer, o.optString("explanation").trim(), ts(o))
+                    else QuizQuestion(q, strings(o.optJSONArray("options")), answer, o.optString("explanation").trim(), ts(o), pg(o))
                 },
             )
         }
@@ -119,7 +130,20 @@ private val INLINE_TIMESTAMP = Regex("""\s*\((?:at\s*)?\d{1,2}:\d{2}(?::\d{2})?(
 
 internal fun stripInlineTimestamps(text: String): String = text.replace(INLINE_TIMESTAMP, "").trim()
 
-private fun JSONObject.putTs(ms: Long?): JSONObject = if (ms == null) this else put("at", formatTimestamp(ms))
+private fun JSONObject.putTs(ms: Long?, page: Int? = null): JSONObject = when {
+    ms != null -> put("at", formatTimestamp(ms))
+    page != null -> put("at", "Slide $page")
+    else -> this
+}
+
+/** "12:40" for a time, "Slide 7" for a page, or null. */
+fun refLabel(atMs: Long?, page: Int?): String? = atMs?.let(::formatTimestamp) ?: page?.let { "Slide $it" }
+
+/** Accepts "Slide 7", "slide7", "Page 7", "p. 7", "[Slide 7]"; null for anything else (e.g. a timestamp). */
+fun parsePage(value: Any?): Int? {
+    val s = (value as? String)?.trim()?.trim('[', ']') ?: return null
+    return Regex("""^(?:slide|page|p\.?)\s*(\d+)$""", RegexOption.IGNORE_CASE).find(s)?.groupValues?.get(1)?.toIntOrNull()
+}
 
 fun formatTimestamp(ms: Long): String {
     val s = ms / 1000
