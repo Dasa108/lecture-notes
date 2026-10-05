@@ -54,27 +54,31 @@ class NotesGenerator(
     /** Largest request (input + output tokens) the provider accepted/allows; learned from TooLarge errors. */
     private var requestLimit = config.contextWindow
     private var paceUntil = 0L
+    /** Measured prompt size without the transcript; see [promptOverhead]. */
+    private var overhead = 0
 
     suspend fun generate(input: NotesInput, resume: PartialRun?): StudyNotes {
+        overhead = promptOverhead(input)
         val whole = render(input.lines)
         val single = singleOutputTokens(input.style)
-        if (resume == null && estimateTokens(whole) + PROMPT_OVERHEAD + single <= requestLimit) {
+        if (resume == null && estimateTokens(whole) + overhead + single <= requestLimit) {
             try {
                 progress.status("Writing notes…", null)
                 val counts = Prompts.counts(input.style, input.durationMs, whole = true)
                 val json = callJson(input.systemPrompt, Prompts.request(input.title, input.subject, input.style, whole, counts, null, ""), single)
                 return StudyNotes.parse(json, input.durationMs, input.title)
             } catch (e: LlmException.TooLarge) {
-                learnLimit(e, estimateTokens(whole) + PROMPT_OVERHEAD + single)
+                learnLimit(e, estimateTokens(whole) + overhead + single)
             } catch (e: LlmException.Truncated) {
                 // The whole lecture's notes didn't fit in one reply: split instead.
-                requestLimit = minOf(requestLimit, estimateTokens(whole) + PROMPT_OVERHEAD + single - 1)
+                requestLimit = minOf(requestLimit, estimateTokens(whole) + overhead + single - 1)
             }
         }
         return generateInParts(input, resume)
     }
 
     private suspend fun generateInParts(input: NotesInput, resume: PartialRun?): StudyNotes {
+        if (overhead == 0) overhead = promptOverhead(input)
         var budget = resume?.budgetTokens ?: partBudget(input.style)
         val done = resume?.parts?.toMutableMap() ?: mutableMapOf()
         while (true) {
@@ -88,7 +92,7 @@ class NotesGenerator(
                 }
                 return merge(input, parts.indices.map { JSONObject(done.getValue(it)) })
             } catch (e: LlmException.TooLarge) {
-                learnLimit(e, budget + PROMPT_OVERHEAD + partOutputTokens(input.style))
+                learnLimit(e, budget + overhead + partOutputTokens(input.style))
                 val newBudget = partBudget(input.style)
                 if (newBudget >= budget) budget /= 2 else budget = newBudget
                 if (budget < MIN_PART_TOKENS) throw IOException("This model's limits are too small for lecture notes. Try another model.")
@@ -126,7 +130,7 @@ class NotesGenerator(
         val notes = parsed.copy(sections = mergeContinuations(parsed.sections))
         // Deduplicate terms and trim flashcards/quiz to the counts for the whole lecture, spread across parts.
         val counts = Prompts.counts(input.style, input.durationMs, whole = true)
-        val terms = notes.keyTerms.distinctBy { it.term.lowercase() }
+        val terms = spread(notes.keyTerms.distinctBy { it.term.lowercase() }, counts.keyTerms * 3 / 2)
         val cards = spread(notes.flashcards.distinctBy { it.front.lowercase() }, counts.flashcards * 3 / 2)
         val quiz = spread(notes.quiz.distinctBy { it.question.lowercase() }, counts.quiz * 3 / 2)
 
@@ -196,7 +200,20 @@ class NotesGenerator(
     }
 
     private fun partBudget(style: NoteStyle) =
-        (requestLimit - PROMPT_OVERHEAD - partOutputTokens(style)).coerceIn(MIN_PART_TOKENS / 2, MAX_PART_TOKENS)
+        (requestLimit - overhead - partOutputTokens(style)).coerceIn(MIN_PART_TOKENS / 2, MAX_PART_TOKENS)
+
+    /**
+     * Tokens used by everything except the transcript: system prompt (including the subject's own
+     * instructions, which vary in length) plus the request template, measured rather than guessed.
+     */
+    private fun promptOverhead(input: NotesInput): Int {
+        val template = Prompts.request(
+            input.title, input.subject, input.style, transcript = "",
+            counts = Prompts.counts(input.style, input.durationMs, whole = true),
+            part = 99 to 99, range = "0:00:00–0:00:00",
+        )
+        return estimateTokens(input.systemPrompt) + estimateTokens(template) + OVERHEAD_MARGIN
+    }
 
     // Notes cover the lecture fully and add explanations, so replies are long.
     private fun singleOutputTokens(style: NoteStyle) = when (style) {
@@ -212,8 +229,8 @@ class NotesGenerator(
     }
 
     companion object {
-        /** System prompt (incl. subject guidance) + instructions + schema. */
-        private const val PROMPT_OVERHEAD = 1_300
+        /** Headroom for tokenizer differences and the JSON-repair reminder. */
+        private const val OVERHEAD_MARGIN = 150
         private const val MIN_PART_TOKENS = 800
         /** Parts larger than ~10 min of speech give shallower notes, even if the model could take more. */
         private const val MAX_PART_TOKENS = 3_000

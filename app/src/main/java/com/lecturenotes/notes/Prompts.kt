@@ -20,11 +20,18 @@ object Prompts {
           they seem important to you. Expect only a few per lecture.
         - Ignore small talk, attendance, administrative chatter and repetition.
 
+        Concise: comprehensive means every idea is captured, not that the notes are long
+        - Write in compressed note style, not prose. Fragments are fine. Cut filler such as "The lecturer explains
+          that", "It is important to note", "In this section".
+        - One idea per bullet, usually under 20 words. Merge bullets that say the same thing.
+        - Never repeat a point across bullets, sections, key terms, explanations and flashcards.
+
         Understanding: your additions go in "explain"
-        - For each section, add what a good tutor would add so the student understands, not just memorises:
+        - Where it genuinely helps (not in every section), add what a good tutor would add so the student understands:
           the intuition behind the idea, a simple analogy, why it matters, how it connects to other topics in the
           lecture, a short worked example, or a common misconception.
-        - Add only well-established, standard knowledge you are confident is correct. If unsure, leave it out.
+        - Each "explain" item is 1-2 short sentences. Add only well-established, standard knowledge you are
+          confident is correct. If unsure, leave it out.
         - Never put your additions in "bullets" and never present them as something the lecturer said, so the
           student can always tell the lecture apart from your explanations.
         - If the lecturer says something that looks wrong or outdated, keep it in "bullets" as said and gently
@@ -35,12 +42,15 @@ object Prompts {
           makes the intended term obvious, use the correct term (e.g. "scaling loss" said about compute and tokens
           means "scaling laws").
         - If a word or acronym is garbled and the context does not make the intended term clear, write it as heard
-          followed by "[unclear]". Never invent what an acronym stands for. A nearby sentence often reveals the
-          word (e.g. "each call is an ASM ... that agent has limited autonomy" means "an agent").
+          followed by "[unclear]". A nearby sentence often reveals the word (e.g. "each call is an ASM ... that
+          agent has limited autonomy" means "an agent").
+        - If the lecturer uses an acronym without saying what it stands for, keep the acronym exactly as said.
+          Never add an expansion in brackets: a guessed expansion is worse than none.
         - When the lecturer refers to something only visible ("as you can see here", a diagram, the board or a
           slide), write "(shown on board/slide)" instead of guessing what it showed.
         - Write formulas in plain text, e.g. P(A|B) = P(B|A)·P(A) / P(B), x^2, sqrt(n), Σ. Never use LaTeX.
-        - Key term definitions may be fuller than the lecturer's wording but must agree with it.
+        - Key terms: only technical terms a student would need to define in an exam, each defined in under 25 words.
+          Definitions may be fuller than the lecturer's wording but must agree with it.
         - Flashcards: one fact or idea per card, with a short answer (a sentence or a formula).
         - Quiz: mix recall with understanding and application (why does X happen, what would change if...,
           apply the idea to a new case). Make wrong options plausible. Answers must agree with the lecture.
@@ -118,25 +128,30 @@ object Prompts {
 
     private fun styleRules(style: NoteStyle) = when (style) {
         NoteStyle.BRIEF -> "Style: BRIEF. Only the essentials a student must remember: 2-4 short bullets per section, " +
-            "fewer sections, and at most one short \"explain\" item per section."
-        NoteStyle.STANDARD -> "Style: THOROUGH AND EXAM-FOCUSED. Cover every topic taught. Use 4-8 bullets per section, " +
-            "with definitions, formulas, arguments, method steps and examples, and 1-3 \"explain\" items per section."
-        NoteStyle.DETAILED -> "Style: COMPREHENSIVE. Capture every point, example and line of reasoning, as many bullets " +
-            "as needed. Give 2-4 \"explain\" items per section, including a worked example or analogy where it helps."
+            "fewer sections, and an \"explain\" item only where a point would otherwise be unclear."
+        NoteStyle.STANDARD -> "Style: THOROUGH AND EXAM-FOCUSED. Cover every topic taught in 3-6 tight bullets per section " +
+            "(definitions, formulas, arguments, method steps, examples). 0-2 \"explain\" items per section, only where they add understanding."
+        NoteStyle.DETAILED -> "Style: COMPREHENSIVE. Capture every point, example and line of reasoning, still as tight bullets. " +
+            "1-3 \"explain\" items per section, including a worked example or analogy where it helps."
     }
 
-    data class Counts(val flashcards: Int, val quiz: Int)
+    data class Counts(val flashcards: Int, val quiz: Int, val keyTerms: Int)
 
     /** Scales flashcard and quiz counts with the length of the audio covered. */
     fun counts(style: NoteStyle, durationMs: Long, whole: Boolean): Counts {
         val tenMin = (durationMs / 600_000.0).coerceAtLeast(0.5)
-        val (f, q) = when (style) {
-            NoteStyle.BRIEF -> 2.0 to 1.0
-            NoteStyle.STANDARD -> 4.0 to 2.0
-            NoteStyle.DETAILED -> 6.0 to 3.0
+        // Per 10 minutes of lecture: flashcards, quiz questions, key terms.
+        val (f, q, k) = when (style) {
+            NoteStyle.BRIEF -> Triple(2.0, 1.0, 2.0)
+            NoteStyle.STANDARD -> Triple(4.0, 2.0, 4.0)
+            NoteStyle.DETAILED -> Triple(6.0, 3.0, 6.0)
         }
         val min = if (whole) 3 else 1
-        return Counts((f * tenMin).toInt().coerceIn(min, 40), (q * tenMin).toInt().coerceIn(if (whole) 2 else 1, 20))
+        return Counts(
+            (f * tenMin).toInt().coerceIn(min, 40),
+            (q * tenMin).toInt().coerceIn(if (whole) 2 else 1, 20),
+            (k * tenMin).toInt().coerceIn(min, 40),
+        )
     }
 
     fun request(
@@ -155,7 +170,8 @@ object Prompts {
             appendLine("the parts will be combined later. Keep \"title\" empty and make \"overview\" 1-2 sentences about this part.")
         }
         appendLine(styleRules(style))
-        appendLine("Write about ${counts.flashcards} flashcards and ${counts.quiz} quiz questions (mostly multiple choice with 4 options;")
+        appendLine("Write at most ${counts.keyTerms} key terms, about ${counts.flashcards} flashcards and ${counts.quiz} quiz questions")
+        appendLine("(quiz mostly multiple choice with 4 options;")
         appendLine("use an empty options list for a short-answer question). Flashcards and questions must test understanding of")
         appendLine("what was actually taught, not trivia about the lecture itself.")
         appendLine("Every \"at\" value must be a timestamp copied from the transcript line where that idea is discussed.")

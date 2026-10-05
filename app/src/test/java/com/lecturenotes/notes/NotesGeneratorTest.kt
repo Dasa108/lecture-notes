@@ -94,6 +94,18 @@ class NotesGeneratorTest {
     }
 
     @Test
+    fun longSubjectInstructionsStillFitTheLimit() = runBlocking {
+        val limit = 6_000
+        val client = FakeClient(requestLimit = limit)
+        val instructions = "Explain everything in the context of my B.Tech AI course. ".repeat(40) // ~2,400 chars
+        val input = lecture(60).copy(systemPrompt = Prompts.defaultGuidance(Prompts.SubjectType.THEORY, instructions) + "\n\n" + Prompts.JSON_RULE)
+        NotesGenerator(client, config(128_000), RecordingProgress()).generate(input, null)
+        client.requests.drop(1).forEach { r ->
+            assertTrue("request fits limit", NotesGenerator.estimateTokens(r.system + r.user) + r.maxTokens <= limit)
+        }
+    }
+
+    @Test
     fun resumesOnlyMissingParts() = runBlocking {
         val limit = 6_000
         // First run: fail on the 3rd part.
@@ -150,6 +162,13 @@ class NotesGeneratorTest {
         assertEquals(listOf("Scaling laws", "Agents"), merged.map { it.heading })
         assertEquals(listOf("a", "b"), merged[0].bullets)
         assertEquals(0L, merged[0].atMs)
+    }
+
+    @Test
+    fun stripsTimestampsTheAiWritesIntoText() {
+        assertEquals("Chinchilla scaling law relates compute and tokens.", stripInlineTimestamps("Chinchilla scaling law relates compute and tokens (3:05‑3:13)."))
+        assertEquals("Each call is an agent.", stripInlineTimestamps("Each call is an agent (41:03)."))
+        assertEquals("Ratio 3:1 matters", stripInlineTimestamps("Ratio 3:1 matters")) // not a timestamp in brackets
     }
 
     @Test

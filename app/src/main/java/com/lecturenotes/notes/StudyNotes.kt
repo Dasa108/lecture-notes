@@ -81,7 +81,9 @@ data class StudyNotes(
         /** Lenient parse of the AI's JSON (or our own stored JSON). [durationMs] bounds timestamps. */
         fun parse(json: JSONObject, durationMs: Long, fallbackTitle: String): StudyNotes {
             fun ts(o: JSONObject) = parseTimestamp(o.opt("at"), durationMs)
-            fun strings(a: JSONArray?) = a?.let { arr -> (0 until arr.length()).mapNotNull { arr.optString(it).trim().ifBlank { null } } }.orEmpty()
+            fun strings(a: JSONArray?) = a?.let { arr ->
+                (0 until arr.length()).mapNotNull { stripInlineTimestamps(arr.optString(it)).ifBlank { null } }
+            }.orEmpty()
             fun objects(key: String) = json.optJSONArray(key)?.let { arr -> (0 until arr.length()).mapNotNull { arr.optJSONObject(it) } }.orEmpty()
             return StudyNotes(
                 title = json.optString("title").trim().ifBlank { fallbackTitle },
@@ -94,7 +96,7 @@ data class StudyNotes(
                 },
                 keyTerms = objects("keyTerms").mapNotNull { o ->
                     val term = o.optString("term").trim()
-                    if (term.isBlank()) null else KeyTerm(term, o.optString("definition").trim(), ts(o))
+                    if (term.isBlank()) null else KeyTerm(term, stripInlineTimestamps(o.optString("definition")), ts(o))
                 },
                 flashcards = objects("flashcards").mapNotNull { o ->
                     val front = o.optString("front").trim()
@@ -111,6 +113,11 @@ data class StudyNotes(
         }
     }
 }
+
+/** Timestamps the AI sometimes writes into the text, e.g. "(3:05‑3:13)" or "(41:03)"; the app shows its own. */
+private val INLINE_TIMESTAMP = Regex("""\s*\((?:at\s*)?\d{1,2}:\d{2}(?::\d{2})?(?:\s*[-–‑—]\s*\d{1,2}:\d{2}(?::\d{2})?)?\)""")
+
+internal fun stripInlineTimestamps(text: String): String = text.replace(INLINE_TIMESTAMP, "").trim()
 
 private fun JSONObject.putTs(ms: Long?): JSONObject = if (ms == null) this else put("at", formatTimestamp(ms))
 
