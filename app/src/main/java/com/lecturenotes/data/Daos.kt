@@ -80,6 +80,13 @@ interface NotesDao {
     @Query("UPDATE notes SET message = :message WHERE recordingId = :recordingId")
     suspend fun setMessage(recordingId: Long, message: String?)
 
+    @Query("SELECT * FROM notes WHERE status = 'DONE' AND json IS NOT NULL")
+    suspend fun allDone(): List<Notes>
+
+    /** Recordings whose notes mention [pattern] (a LIKE pattern); the caller finds the exact line. */
+    @Query("SELECT * FROM notes WHERE json LIKE :pattern ESCAPE '\\'")
+    fun observeMatching(pattern: String): Flow<List<Notes>>
+
     @Query("UPDATE notes SET partialJson = :partialJson WHERE recordingId = :recordingId")
     suspend fun setPartial(recordingId: Long, partialJson: String?)
 
@@ -91,6 +98,104 @@ interface NotesDao {
 
     @Query("DELETE FROM notes WHERE recordingId = :recordingId")
     suspend fun delete(recordingId: Long)
+}
+
+/** Counts for a study scope (all, one subject, or one lecture). */
+data class StudyCounts(
+    @ColumnInfo(name = "due") val due: Int,
+    @ColumnInfo(name = "newCards") val newCards: Int,
+    @ColumnInfo(name = "total") val total: Int,
+)
+
+/** One lecture's flashcards, for the study picker. */
+data class LectureCards(
+    @ColumnInfo(name = "recordingId") val recordingId: Long,
+    @ColumnInfo(name = "title") val title: String,
+    @ColumnInfo(name = "subjectId") val subjectId: Long?,
+    @ColumnInfo(name = "createdAt") val createdAt: Long,
+    @ColumnInfo(name = "due") val due: Int,
+    @ColumnInfo(name = "newCards") val newCards: Int,
+    @ColumnInfo(name = "total") val total: Int,
+)
+
+@Dao
+interface ReviewCardDao {
+    @Query(
+        """SELECT r.id AS recordingId, r.title, r.subjectId, r.createdAt,
+             SUM(CASE WHEN c.firstReviewedAt IS NOT NULL AND c.dueAt <= :now THEN 1 ELSE 0 END) AS due,
+             SUM(CASE WHEN c.firstReviewedAt IS NULL THEN 1 ELSE 0 END) AS newCards,
+             COUNT(*) AS total
+           FROM review_cards c JOIN recordings r ON r.id = c.recordingId
+           GROUP BY r.id ORDER BY r.createdAt DESC""",
+    )
+    suspend fun lectureCards(now: Long): List<LectureCards>
+
+    /** Due reviews/relearning (oldest first), then new cards, from the chosen lectures. */
+    @Query(
+        """SELECT * FROM review_cards
+           WHERE recordingId IN (:recordingIds)
+             AND ((firstReviewedAt IS NOT NULL AND dueAt <= :now) OR firstReviewedAt IS NULL)
+           ORDER BY firstReviewedAt IS NULL, dueAt, recordingId, id""",
+    )
+    suspend fun studyQueueFor(now: Long, recordingIds: List<Long>): List<ReviewCard>
+
+    /** Every card from the chosen lectures, for exam revision regardless of schedule. */
+    @Query("SELECT * FROM review_cards WHERE recordingId IN (:recordingIds) ORDER BY recordingId, id")
+    suspend fun allFor(recordingIds: List<Long>): List<ReviewCard>
+
+    @Query(
+        """SELECT MIN(dueAt) FROM review_cards
+           WHERE firstReviewedAt IS NOT NULL AND dueAt > :now AND recordingId IN (:recordingIds)""",
+    )
+    suspend fun nextDueFor(now: Long, recordingIds: List<Long>): Long?
+
+    @Query(
+        """SELECT
+             SUM(CASE WHEN c.firstReviewedAt IS NOT NULL AND c.dueAt <= :now THEN 1 ELSE 0 END) AS due,
+             SUM(CASE WHEN c.firstReviewedAt IS NULL THEN 1 ELSE 0 END) AS newCards,
+             COUNT(*) AS total
+           FROM review_cards c JOIN recordings r ON r.id = c.recordingId
+           WHERE (:subjectId IS NULL OR r.subjectId = :subjectId)
+             AND (:recordingId IS NULL OR c.recordingId = :recordingId)""",
+    )
+    fun observeCounts(now: Long, subjectId: Long?, recordingId: Long?): Flow<StudyCounts?>
+
+    /** New cards first studied since [since]; used for the daily new-card limit. */
+    @Query("SELECT COUNT(*) FROM review_cards WHERE firstReviewedAt >= :since")
+    suspend fun newStudiedSince(since: Long): Int
+
+    @Query("SELECT COUNT(*) FROM review_cards WHERE lastReviewedAt >= :since")
+    fun observeReviewedSince(since: Long): Flow<Int>
+
+    @Query("SELECT * FROM review_cards WHERE recordingId = :recordingId")
+    suspend fun getFor(recordingId: Long): List<ReviewCard>
+
+    @Query("SELECT recordingId FROM review_cards GROUP BY recordingId")
+    suspend fun recordingsWithCards(): List<Long>
+
+    @Insert
+    suspend fun insertAll(cards: List<ReviewCard>)
+
+    @Update
+    suspend fun updateAll(cards: List<ReviewCard>)
+
+    @Update
+    suspend fun update(card: ReviewCard)
+
+    @Query("DELETE FROM review_cards WHERE id IN (:ids)")
+    suspend fun deleteIds(ids: List<Long>)
+}
+
+@Dao
+interface QuizAttemptDao {
+    @Insert
+    suspend fun insert(attempt: QuizAttempt)
+
+    @Query("SELECT * FROM quiz_attempts WHERE recordingId = :recordingId ORDER BY takenAt DESC")
+    fun observeFor(recordingId: Long): Flow<List<QuizAttempt>>
+
+    @Query("SELECT MAX(correct) FROM quiz_attempts WHERE recordingId = :recordingId")
+    suspend fun bestFor(recordingId: Long): Int?
 }
 
 @Dao

@@ -18,6 +18,10 @@ object Routes {
     const val SETTINGS = "settings"
     const val NOTES_AI = "notes-ai"
     const val SUBJECT = "subject/{id}"
+    const val STUDY = "study?subject={subject}&recording={recording}"
+    const val QUIZ = "quiz/{id}"
+    fun study(subjectId: Long? = null, recordingId: Long? = null) = "study?subject=${subjectId ?: -1}&recording=${recordingId ?: -1}"
+    fun quiz(recordingId: Long) = "quiz/$recordingId"
     fun subject(id: Long) = "subject/$id"
     const val RECORDING = "recording/{id}?t={t}"
     fun record(subjectId: Long?) = "record?subject=${subjectId ?: -1}"
@@ -43,6 +47,28 @@ fun AppNav(openRecording: MutableStateFlow<Long?>) {
                 onModels = { nav.navigate(Routes.MODELS) },
                 onSettings = { nav.navigate(Routes.SETTINGS) },
                 onEditSubject = { nav.navigate(Routes.subject(it)) },
+                onStudy = { nav.navigate(Routes.study(subjectId = it)) },
+            )
+        }
+        composable(
+            Routes.STUDY,
+            arguments = listOf(
+                navArgument("subject") { type = NavType.LongType; defaultValue = -1L },
+                navArgument("recording") { type = NavType.LongType; defaultValue = -1L },
+            ),
+        ) { entry ->
+            com.lecturenotes.study.StudyScreen(
+                subjectId = entry.arguments!!.getLong("subject").takeIf { it > 0 },
+                recordingId = entry.arguments!!.getLong("recording").takeIf { it > 0 },
+                onBack = { nav.popBackStack() },
+                onOpenLecture = { id, at -> nav.navigate(Routes.recording(id, at)) },
+            )
+        }
+        composable(Routes.QUIZ, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
+            com.lecturenotes.study.QuizScreen(
+                recordingId = entry.arguments!!.getLong("id"),
+                onBack = { nav.popBackStack() },
+                onOpenLecture = { id, at -> nav.navigate(Routes.recording(id, at)) },
             )
         }
         composable(Routes.SUBJECT, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
@@ -88,6 +114,8 @@ fun AppNav(openRecording: MutableStateFlow<Long?>) {
                 onModels = { nav.navigate(Routes.MODELS) },
                 onNotesAi = { nav.navigate(Routes.NOTES_AI) },
                 onEditSubject = { nav.navigate(Routes.subject(it)) },
+                onStudyCards = { nav.navigate(Routes.study(recordingId = it)) },
+                onQuiz = { nav.navigate(Routes.quiz(it)) },
             )
         }
     }

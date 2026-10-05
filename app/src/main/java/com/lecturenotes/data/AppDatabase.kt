@@ -23,19 +23,42 @@ class Converters {
     fun stringToNotesStatus(value: String): NotesStatus = NotesStatus.valueOf(value)
 }
 
-@Database(entities = [Recording::class, Segment::class, Subject::class, Notes::class], version = 4)
+@Database(entities = [Recording::class, Segment::class, Subject::class, Notes::class, ReviewCard::class, QuizAttempt::class], version = 5)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun recordings(): RecordingDao
     abstract fun segments(): SegmentDao
     abstract fun subjects(): SubjectDao
     abstract fun notes(): NotesDao
+    abstract fun reviewCards(): ReviewCardDao
+    abstract fun quizAttempts(): QuizAttemptDao
 
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "lecturenotes.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
+
+        /** v5: study mode (flashcard review schedule, quiz scores). */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `review_cards` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`recordingId` INTEGER NOT NULL, `front` TEXT NOT NULL, `back` TEXT NOT NULL, `atMs` INTEGER, " +
+                        "`ease` REAL NOT NULL, `intervalDays` REAL NOT NULL, `reps` INTEGER NOT NULL, `lapses` INTEGER NOT NULL, " +
+                        "`dueAt` INTEGER NOT NULL, `firstReviewedAt` INTEGER, `lastReviewedAt` INTEGER, `createdAt` INTEGER NOT NULL, " +
+                        "FOREIGN KEY(`recordingId`) REFERENCES `recordings`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_review_cards_recordingId_front` ON `review_cards` (`recordingId`, `front`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_review_cards_dueAt` ON `review_cards` (`dueAt`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `quiz_attempts` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`recordingId` INTEGER NOT NULL, `correct` INTEGER NOT NULL, `total` INTEGER NOT NULL, `takenAt` INTEGER NOT NULL, " +
+                        "FOREIGN KEY(`recordingId`) REFERENCES `recordings`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_quiz_attempts_recordingId` ON `quiz_attempts` (`recordingId`)")
+            }
+        }
 
         /** v4: per-subject notes prompts. */
         private val MIGRATION_3_4 = object : Migration(3, 4) {

@@ -55,6 +55,7 @@ class NotesWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
                 PartialRun.parse(notes.partialJson),
             )
             dao.finish(recordingId, result.toJson())
+            com.lecturenotes.study.CardSync.sync(app.db, recordingId, result)
             Result.success()
         } catch (e: LlmException.Auth) {
             fail("${preset.label} rejected your API key. Check it in Settings → Notes AI.")

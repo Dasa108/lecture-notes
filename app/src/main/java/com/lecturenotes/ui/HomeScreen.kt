@@ -43,6 +43,8 @@ import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.School
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.AlertDialog
@@ -151,8 +153,47 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val subjects = app.db.subjects().observeWithCounts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** Search hits: the transcript line where the words were said, else the line of the notes that mentions them. */
     private val matches = _query.debounce(250).flatMapLatest { q ->
-        if (q.isBlank()) flowOf(emptyList()) else app.db.segments().observeMatches(likePattern(q))
+        if (q.isBlank()) {
+            flowOf(emptyList())
+        } else {
+            combine(
+                app.db.segments().observeMatches(likePattern(q)),
+                app.db.notes().observeMatching(likePattern(q)),
+            ) { transcript, notes ->
+                val inTranscript = transcript.map { it.recordingId }.toSet()
+                transcript + notes.filter { it.recordingId !in inTranscript }.mapNotNull { notesMatch(it, q.trim()) }
+            }
+        }
+    }
+
+    /** Cards to study in the current subject (or everywhere), refreshed each minute as cards fall due. */
+    val studyCounts = combine(_filter, ticker()) { f, _ -> f }
+        .flatMapLatest { f ->
+            app.db.reviewCards().observeCounts(System.currentTimeMillis(), (f as? LibraryFilter.InSubject)?.id, null)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private fun ticker() = kotlinx.coroutines.flow.flow {
+        while (true) {
+            emit(Unit)
+            kotlinx.coroutines.delay(60_000)
+        }
+    }
+
+    private fun notesMatch(n: com.lecturenotes.data.Notes, q: String): TranscriptMatch? {
+        val notes = runCatching {
+            com.lecturenotes.notes.StudyNotes.parse(org.json.JSONObject(n.json ?: return null), Long.MAX_VALUE / 2, "")
+        }.getOrNull() ?: return null
+        fun hit(text: String) = text.contains(q, ignoreCase = true)
+        notes.sections.forEach { s ->
+            (listOf(s.heading) + s.bullets + s.explain).firstOrNull(::hit)?.let { return TranscriptMatch(n.recordingId, s.atMs ?: 0, "Notes: $it") }
+        }
+        notes.keyTerms.firstOrNull { hit(it.term) || hit(it.definition) }?.let {
+            return TranscriptMatch(n.recordingId, it.atMs ?: 0, "Notes: ${it.term}: ${it.definition}")
+        }
+        return null
     }
 
     val content = combine(app.db.recordings().observeAll(), subjects, _filter, _query, matches) { recs, subs, filter, q, hits ->
@@ -246,6 +287,7 @@ fun HomeScreen(
     onModels: () -> Unit,
     onSettings: () -> Unit,
     onEditSubject: (Long) -> Unit,
+    onStudy: (subjectId: Long?) -> Unit,
     vm: HomeViewModel = viewModel(),
 ) {
     val content by vm.content.collectAsState()
@@ -254,6 +296,7 @@ fun HomeScreen(
     val query by vm.query.collectAsState()
     val selection by vm.selection.collectAsState()
     val hasModel by vm.hasModel.collectAsState()
+    val study by vm.studyCounts.collectAsState()
     val recorder by RecorderService.state.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -372,6 +415,10 @@ fun HomeScreen(
                     }
                 }
                 if (!hasModel && !searching) item { NoModelCard(onModels) }
+                val counts = study
+                if (!searching && !selecting && counts != null && counts.due + counts.newCards > 0) item {
+                    StudyBanner(counts.due, counts.newCards) { onStudy(vm.targetSubjectId) }
+                }
 
                 val current = (filter as? LibraryFilter.InSubject)?.let { f -> subjects.firstOrNull { it.subject.id == f.id } }
                 if (!searching && current != null) item {
@@ -665,6 +712,30 @@ private fun LectureCard(
                     StatusWithProgress(rec)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun StudyBanner(due: Int, new: Int, onStudy: () -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onStudy),
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.School, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Flashcards to study", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    listOfNotNull(
+                        if (due > 0) "$due due" else null,
+                        if (new > 0) "$new new" else null,
+                    ).joinToString(" · "),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            FilledTonalButton(onClick = onStudy) { Text("Study") }
         }
     }
 }

@@ -51,6 +51,55 @@ data class Notes(
     val createdAt: Long = System.currentTimeMillis(),
 )
 
+/** A flashcard from a lecture's notes, with its spaced-repetition schedule. */
+@Entity(
+    tableName = "review_cards",
+    foreignKeys = [ForeignKey(
+        entity = Recording::class,
+        parentColumns = ["id"],
+        childColumns = ["recordingId"],
+        onDelete = ForeignKey.CASCADE,
+    )],
+    indices = [Index(value = ["recordingId", "front"], unique = true), Index("dueAt")],
+)
+data class ReviewCard(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val recordingId: Long,
+    val front: String,
+    val back: String,
+    /** Where in the lecture this card's idea is taught. */
+    val atMs: Long? = null,
+    val ease: Double = 2.5,
+    val intervalDays: Double = 0.0,
+    /** Successful reviews in a row; 0 = new (never reviewed) or relearning. */
+    val reps: Int = 0,
+    val lapses: Int = 0,
+    val dueAt: Long,
+    val firstReviewedAt: Long? = null,
+    val lastReviewedAt: Long? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+) {
+    val isNew: Boolean get() = firstReviewedAt == null
+}
+
+@Entity(
+    tableName = "quiz_attempts",
+    foreignKeys = [ForeignKey(
+        entity = Recording::class,
+        parentColumns = ["id"],
+        childColumns = ["recordingId"],
+        onDelete = ForeignKey.CASCADE,
+    )],
+    indices = [Index("recordingId")],
+)
+data class QuizAttempt(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val recordingId: Long,
+    val correct: Int,
+    val total: Int,
+    val takenAt: Long = System.currentTimeMillis(),
+)
+
 @Entity(tableName = "subjects")
 data class Subject(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,

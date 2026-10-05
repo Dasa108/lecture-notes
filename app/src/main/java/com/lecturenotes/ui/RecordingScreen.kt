@@ -108,6 +108,9 @@ class RecordingViewModel(application: Application, private val id: Long) : Andro
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val aiConfig = app.aiSettings.config
+    val cardCounts = app.db.reviewCards().observeCounts(System.currentTimeMillis(), null, id)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val attempts = app.db.quizAttempts().observeFor(id).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private var player: MediaPlayer? = null
     private var playerPath: String? = null
@@ -238,6 +241,8 @@ fun RecordingScreen(
     onModels: () -> Unit,
     onNotesAi: () -> Unit,
     onEditSubject: (Long) -> Unit,
+    onStudyCards: (Long) -> Unit,
+    onQuiz: (Long) -> Unit,
 ) {
     val application = LocalContext.current.applicationContext as Application
     val vm: RecordingViewModel = viewModel(
@@ -254,6 +259,8 @@ fun RecordingScreen(
     val notes by vm.notes.collectAsState()
     val study by vm.studyNotes.collectAsState()
     val ai by vm.aiConfig.collectAsState()
+    val cardCounts by vm.cardCounts.collectAsState()
+    val attempts by vm.attempts.collectAsState()
     var tab by rememberSaveable { mutableStateOf(0) }
     val context = LocalContext.current
 
@@ -339,6 +346,10 @@ fun RecordingScreen(
                 onSetUpAi = onNotesAi,
                 subject = subjects.firstOrNull { it.subject.id == r.subjectId }?.subject,
                 onEditSubject = onEditSubject,
+                cardCounts = cardCounts,
+                attempts = attempts,
+                onStudyCards = { onStudyCards(recordingId) },
+                onQuiz = { onQuiz(recordingId) },
                 onShare = {
                     study?.let { n ->
                         context.startActivity(

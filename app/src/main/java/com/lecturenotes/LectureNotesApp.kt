@@ -36,6 +36,7 @@ class LectureNotesApp : Application() {
         aiSettings = ProviderSettings(this)
         createNotificationChannels()
         appScope.launch { recoverInterruptedRecordings() }
+        appScope.launch { com.lecturenotes.study.CardSync.backfill(db) }
     }
 
     /** A recording left in RECORDING state means the process died mid-capture; keep what was saved. */

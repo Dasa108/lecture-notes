@@ -67,6 +67,10 @@ class NotesPaneModel(
     /** The lecture's subject, whose notes instructions are used; null if unfiled. */
     val subject: com.lecturenotes.data.Subject?,
     val onEditSubject: (Long) -> Unit,
+    val cardCounts: com.lecturenotes.data.StudyCounts?,
+    val attempts: List<com.lecturenotes.data.QuizAttempt>,
+    val onStudyCards: () -> Unit,
+    val onQuiz: () -> Unit,
 )
 
 fun LazyListScope.notesPane(m: NotesPaneModel) {
@@ -209,6 +213,7 @@ private fun LazyListScope.studyNotes(n: StudyNotes, m: NotesPaneModel) {
                 Spacer(Modifier.height(8.dp))
                 Text(n.overview, style = MaterialTheme.typography.bodyLarge)
             }
+            StudyActions(m, n)
             Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 AssistChip(onClick = m.onShare, label = { Text("Share") }, leadingIcon = { Icon(Icons.Outlined.Share, null) })
             }
@@ -271,6 +276,42 @@ private fun LazyListScope.studyNotes(n: StudyNotes, m: NotesPaneModel) {
     item {
         HorizontalDivider(Modifier.padding(vertical = 16.dp))
         RegenerateRow(m)
+    }
+}
+
+/** Entry points into flashcard review and the quiz, with this lecture's progress. */
+@Composable
+private fun StudyActions(m: NotesPaneModel, n: StudyNotes) {
+    val c = m.cardCounts
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Study this lecture", style = MaterialTheme.typography.titleMedium)
+            val cardLine = when {
+                c == null || c.total == 0 -> "${n.flashcards.size} flashcards"
+                c.due + c.newCards == 0 -> "${c.total} flashcards · all reviewed for now"
+                else -> "${c.total} flashcards · " + listOfNotNull(
+                    if (c.due > 0) "${c.due} due" else null,
+                    if (c.newCards > 0) "${c.newCards} new" else null,
+                ).joinToString(" · ")
+            }
+            Text(cardLine, style = MaterialTheme.typography.bodySmall)
+            val last = m.attempts.firstOrNull()
+            if (last != null) {
+                val best = m.attempts.maxOf { it.correct }
+                Text(
+                    "Quiz: last ${last.correct}/${last.total}, best $best/${last.total}, ${m.attempts.size} attempt${if (m.attempts.size == 1) "" else "s"}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = m.onStudyCards, enabled = n.flashcards.isNotEmpty()) { Text("Review flashcards") }
+                OutlinedButton(onClick = m.onQuiz, enabled = n.quiz.isNotEmpty()) { Text("Take the quiz") }
+            }
+        }
     }
 }
 

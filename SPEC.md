@@ -159,9 +159,12 @@ The exact models are configured in a remote-updatable `models.json` so they can 
 ## 9. Study features
 
 - **Notes view:** a rendered summary, key terms and an outline. Every item with a timestamp can be tapped to jump the audio player there.
-- **Flashcards:** SM-2 spaced repetition, a per-recording deck plus a combined "due today" deck, and editing, adding or deleting cards.
-- **Quiz:** multiple-choice and short-answer questions. Short answers are self-graded by default, with optional LLM grading. Scores are tracked over time.
-- **Search** across all transcripts and notes (Room FTS).
+- **Flashcards (built in M7):** cards from a lecture's notes go into a review deck (`review_cards`). Regenerating notes keeps the schedule of unchanged questions.
+  - **Choose what to study:** Study opens a lecture picker with per-lecture due/new/total counts and subject quick-select chips. It is pre-selected from the home filter, or from lectures with cards due. A lecture's Notes tab → *Review flashcards* goes straight into that lecture.
+  - **Due cards:** SM-2-style scheduling (Again 1m / Hard 6m / Good 1d / Easy 4d for new cards; intervals then grow by the card's ease, which has a floor of 1.3, with a 365-day cap). 20 new cards a day. Cards due within 20 minutes come back in the same session.
+  - **All cards (exam revision):** every card in the selected lectures, shuffled, with Missed/Got it buttons. Does not change the schedule.
+- **Quiz (built in M7):** one question at a time with instant feedback, explanation and a "hear it in the lecture" link. Short answers are self-graded. Attempts are saved (`quiz_attempts`), and the Notes tab shows the last and best score.
+- **Search (built):** across titles, transcripts and notes. Notes hits show the matching line.
 - **Organisation (built in M1):**
   - **Subjects** (courses) have a name and colour. Filter chips on the home screen show All, each subject with its count, and Unfiled.
   - While a subject is selected, new recordings, videos and imports are filed under it automatically.
