@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Plain HTTP is allowed only because Ollama/LM Studio on the user's own PC serve http://<LAN IP>.
+     Built-in cloud providers all use HTTPS. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

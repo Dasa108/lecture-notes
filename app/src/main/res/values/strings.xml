@@ -1,0 +1,14 @@
+<resources>
+    <string name="app_name">Lecture Notes</string>
+    <string name="channel_recording">Recording</string>
+    <string name="channel_work">Transcription and downloads</string>
+    <string name="recording_now">Recording</string>
+    <string name="recording_paused">Recording paused</string>
+    <string name="pause">Pause</string>
+    <string name="resume">Resume</string>
+    <string name="stop">Stop</string>
+    <string name="preparing">Preparing…</string>
+    <string name="transcribing">Transcribing</string>
+    <string name="writing_notes">Writing study notes</string>
+    <string name="downloading_model">Downloading %1$s speech model</string>
+</resources>

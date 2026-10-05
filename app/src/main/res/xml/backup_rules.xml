@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Models are large and re-downloadable; API keys (M4) must never leave the device. -->
+<full-backup-content>
+    <exclude domain="file" path="models/" />
+    <exclude domain="file" path="audio/" />
+    <exclude domain="sharedpref" path="secrets.xml" />
+</full-backup-content>

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Temporary videos from the camera app; deleted once their audio is extracted. -->
+    <cache-path name="videos" path="videos/" />
+</paths>

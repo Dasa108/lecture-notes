@@ -1,0 +1,8 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Notebook page -->
+    <path android:fillColor="#FFF4F1EA" android:pathData="M34,28h40a4,4 0,0 1,4 4v44a4,4 0,0 1,-4 4h-40a4,4 0,0 1,-4 -4v-44a4,4 0,0 1,4 -4z" />
+    <path android:fillColor="#FF9FB3C8" android:pathData="M38,40h32v3h-32zM38,49h32v3h-32zM38,58h20v3h-20z" />
+    <!-- Sound wave -->
+    <path android:fillColor="#FFF2A541" android:pathData="M40,68h3v6h-3zM46,65h3v12h-3zM52,67h3v8h-3zM58,64h3v14h-3zM64,67h3v8h-3z" />
+</vector>
