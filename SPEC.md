@@ -37,27 +37,24 @@ An Android app that records or imports audio, transcribes it on the device with 
 
 ## 4. Device profiling and model recommendation
 
-### 4.1 Signals collected
-- Total and available RAM (`ActivityManager.MemoryInfo`)
-- SoC (`Build.SOC_MANUFACTURER` / `Build.SOC_MODEL` on API 31+, otherwise `Build.HARDWARE`), core count, and whether the ABI is arm64
-- Free storage
-- **Micro-benchmark:** transcribe a bundled 10-second clip with `tiny.en` and measure the real-time factor (RTF = processing time ÷ audio length). Extrapolate to larger models (base ≈ 2×, small ≈ 6×, medium ≈ 18× the tiny cost).
+### 4.1 Signals collected (built in M2)
+- Total RAM, SoC, core count, fast cores, and free storage (`DeviceInfo`).
+- **Speed test** (`DeviceCheck`): downloads Tiny if needed, transcribes a bundled 30 s clip of dense speech (`assets/bench30.wav`, the JFK sample repeated), first as a warm-up and then a timed run, and reads whisper.cpp's encode/decode timings. The result is saved, and can be re-run from Settings → Speech models.
 
-### 4.2 Whisper model table (English-only, quantized GGUF/ggml)
+### 4.2 Whisper model table (English-only, quantized)
 
-| Model | Approx. size | Min. RAM | Typical use |
-|---|---|---|---|
-| `tiny.en` q5_1 | ~31 MB | 2 GB | Low-end phones, quick drafts |
-| `base.en` q5_1 | ~57 MB | 3 GB | Mid-range default |
-| `small.en` q5_1 | ~180 MB | 6 GB | Good accuracy on lectures |
-| `medium.en` q5_0 | ~510 MB | 8 GB+ | Flagships, short to medium recordings |
+| Model | Size | Min. RAM | Encode / decode cost vs Tiny | Measured per 30 s on a Snapdragon 8s Gen 4 (app open, greedy) |
+|---|---|---|---|---|
+| `tiny.en` q5_1 | 32 MB | 2 GB | 1× / 1× | ~2 s |
+| `base.en` q5_1 | 60 MB | 3 GB | 2.2× / 1.3× | ~3.5 s |
+| `small.en` q5_1 | 190 MB | 6 GB | 8.5× / 1.8× | ~8.6 s (matches the app's own measurement) |
+| `medium.en` q5_0 | 539 MB | 8 GB | 23× / 2.5× | ~13.5–15 s |
 
 ### 4.3 Recommendation rule
-1. Filter out models whose RAM requirement is above what the phone has, or whose size is above 50% of free storage.
-2. From the benchmark, estimate each model's RTF.
-3. Recommend the **largest model with an estimated RTF ≤ 0.5**, which means a 1-hour lecture takes 30 minutes or less. If medium qualifies only for short audio, recommend `small.en` as the default and offer `medium.en` for recordings under 30 minutes.
-4. Show the reasoning, for example: *"8 GB RAM, Snapdragon 8 Gen 2. small.en will transcribe 1 hour in about 12 minutes."*
-5. The user can re-run the device check from Settings.
+1. Keep only models that fit in RAM and in under 50% of free storage.
+2. With a speed test: estimate minutes per hour of lecture = (Tiny encode × encode ratio + Tiny decode × decode ratio) × 120 windows.
+3. Recommend the **most accurate model that does a 1-hour lecture in ≤ 20 minutes with the app open**. Without a speed test, use a memory-based guess that never picks Medium.
+4. The Models screen shows "1-hour lecture ≈ N min with the app open" for each model, and a note that some phones (e.g. vivo) limit background apps to slow cores (measured 2–3× slower).
 
 ### 4.4 Local LLM recommendation (for notes)
 

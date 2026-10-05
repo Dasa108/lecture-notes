@@ -143,6 +143,25 @@ Java_com_lecturenotes_whisper_WhisperNative_nativeFree(JNIEnv *, jobject, jlong 
     delete h;
 }
 
+// [encode_ms, decode_ms] since the last reset; decode includes sampling and batched decoding.
+JNIEXPORT jfloatArray JNICALL
+Java_com_lecturenotes_whisper_WhisperNative_nativeTimings(JNIEnv *env, jobject, jlong jhandle) {
+    auto *h = reinterpret_cast<Handle *>(jhandle);
+    jfloatArray out = env->NewFloatArray(2);
+    if (h == nullptr) return out;
+    whisper_timings *t = whisper_get_timings(h->ctx);
+    if (t == nullptr) return out;
+    jfloat v[2] = {t->encode_ms, t->decode_ms + t->batchd_ms + t->sample_ms + t->prompt_ms};
+    env->SetFloatArrayRegion(out, 0, 2, v);
+    return out;
+}
+
+JNIEXPORT void JNICALL
+Java_com_lecturenotes_whisper_WhisperNative_nativeResetTimings(JNIEnv *, jobject, jlong jhandle) {
+    auto *h = reinterpret_cast<Handle *>(jhandle);
+    if (h != nullptr) whisper_reset_timings(h->ctx);
+}
+
 JNIEXPORT jboolean JNICALL
 Java_com_lecturenotes_whisper_WhisperNative_nativeCpuShrunk(JNIEnv *, jobject, jlong jhandle) {
     auto *h = reinterpret_cast<Handle *>(jhandle);

@@ -40,11 +40,21 @@ class ModelRepository(private val context: Context) {
         notifyChanged()
     }
 
+    private val _bench = MutableStateFlow(BenchResult.parse(prefs.getString(KEY_BENCH, null)))
+    /** The last device speed check, if one has been run. */
+    val bench: StateFlow<BenchResult?> = _bench.asStateFlow()
+
+    fun saveBench(result: BenchResult) {
+        prefs.edit { putString(KEY_BENCH, result.toJson()) }
+        _bench.value = result
+    }
+
     fun notifyChanged() {
         _changes.value++
     }
 
     private companion object {
         const val KEY_SELECTED = "selected_model"
+        const val KEY_BENCH = "bench"
     }
 }

@@ -22,6 +22,8 @@ internal object WhisperNative {
     external fun nativeFree(handle: Long)
     external fun nativeAbort(handle: Long)
     external fun nativeCpuShrunk(handle: Long): Boolean
+    external fun nativeTimings(handle: Long): FloatArray
+    external fun nativeResetTimings(handle: Long)
     external fun nativeTranscribe(
         handle: Long,
         samples: FloatArray,
@@ -66,6 +68,11 @@ class WhisperContext private constructor(private var handle: Long) : Closeable {
 
     /** True if the last [transcribe] stopped because the OS took CPUs away; retry with fewer threads. */
     val cpuShrunk: Boolean get() = handle != 0L && WhisperNative.nativeCpuShrunk(handle)
+
+    /** Encode and decode time (ms) since [resetTimings]. */
+    fun timings(): Pair<Float, Float> = WhisperNative.nativeTimings(handle).let { (it.getOrNull(0) ?: 0f) to (it.getOrNull(1) ?: 0f) }
+
+    fun resetTimings() = WhisperNative.nativeResetTimings(handle)
 
     fun abort() {
         if (handle != 0L) WhisperNative.nativeAbort(handle)

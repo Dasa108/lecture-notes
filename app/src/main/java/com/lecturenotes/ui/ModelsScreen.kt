@@ -45,7 +45,12 @@ import androidx.work.WorkManager
 import com.lecturenotes.app
 import com.lecturenotes.transcribe.Jobs
 import com.lecturenotes.transcribe.ModelDownloadWorker
+import com.lecturenotes.whisper.BenchResult
+import com.lecturenotes.whisper.DeviceCheck
 import com.lecturenotes.whisper.DeviceInfo
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import com.lecturenotes.whisper.WhisperModel
 import com.lecturenotes.whisper.WhisperModels
 import kotlinx.coroutines.flow.SharingStarted
@@ -60,13 +65,37 @@ sealed interface ModelState {
     data object Downloaded : ModelState
 }
 
-data class ModelRow(val model: WhisperModel, val state: ModelState, val selected: Boolean, val recommended: Boolean)
+data class ModelRow(
+    val model: WhisperModel,
+    val state: ModelState,
+    val selected: Boolean,
+    val recommended: Boolean,
+    /** Estimated minutes per hour of lecture with the app open, once the speed check has run. */
+    val minutesPerHour: Double?,
+    val fits: Boolean,
+)
+
+sealed interface CheckState {
+    data object Idle : CheckState
+    data class Running(val message: String) : CheckState
+    data class Failed(val message: String) : CheckState
+}
 
 class ModelsViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application.app
     private val repo = app.models
     val device = DeviceInfo.read(application)
-    val recommended = WhisperModels.recommend(device)
+    val bench = repo.bench
+    private val _check = MutableStateFlow<CheckState>(CheckState.Idle)
+    val check = _check.asStateFlow()
+
+    /** Runs the speed test; the recommendation and per-model estimates update when it finishes. */
+    fun runCheck() = viewModelScope.launch {
+        if (_check.value is CheckState.Running) return@launch
+        _check.value = CheckState.Running("Starting…")
+        _check.value = runCatching { DeviceCheck.run(app) { _check.value = CheckState.Running(it) } }
+            .fold({ CheckState.Idle }, { CheckState.Failed(it.message ?: "The speed test failed.") })
+    }
 
     private val workStates = combine(
         WhisperModels.all.map { model ->
@@ -76,10 +105,12 @@ class ModelsViewModel(application: Application) : AndroidViewModel(application) 
         },
     ) { it.toMap() }
 
-    val rows = combine(workStates, repo.selectedId, repo.changes) { work, _, _ ->
+    val rows = combine(workStates, repo.selectedId, repo.changes, repo.bench) { work, _, _, b ->
         val active = repo.activeModel()
+        val recommended = WhisperModels.recommend(device, b)
+        val fitting = WhisperModels.fitting(device)
         WhisperModels.all.map { model ->
-            ModelRow(model, stateOf(model, work[model.id]), active == model, model == recommended)
+            ModelRow(model, stateOf(model, work[model.id]), active == model, model == recommended, b?.minutesPerHour(model), model in fitting)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -123,14 +154,19 @@ fun ModelsScreen(onBack: () -> Unit, vm: ModelsViewModel = viewModel()) {
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
-            item { DeviceCard(vm.device, vm.recommended) }
+            item {
+                val bench by vm.bench.collectAsState()
+                val check by vm.check.collectAsState()
+                DeviceCard(vm.device, rows.firstOrNull { it.recommended }?.model, bench, check, vm::runCheck)
+            }
             items(rows, key = { it.model.id }) { row ->
                 ModelCard(row, vm::download, vm::cancel, vm::select, vm::delete)
             }
             item {
                 Text(
                     "All models are English-only and run fully on your phone. Larger models are more accurate but slower. " +
-                        "A benchmark-based recommendation is coming in the device check.",
+                        "Times are estimates with the app open; in the background some phones (e.g. vivo, Xiaomi) " +
+                        "limit apps to their slower cores, which can make transcription 2–3× slower.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp),
@@ -141,7 +177,7 @@ fun ModelsScreen(onBack: () -> Unit, vm: ModelsViewModel = viewModel()) {
 }
 
 @Composable
-private fun DeviceCard(device: DeviceInfo, recommended: WhisperModel) {
+private fun DeviceCard(device: DeviceInfo, recommended: WhisperModel?, bench: BenchResult?, check: CheckState, onCheck: () -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
         Column(Modifier.padding(16.dp)) {
             Text("Your phone", style = MaterialTheme.typography.titleMedium)
@@ -153,11 +189,26 @@ private fun DeviceCard(device: DeviceInfo, recommended: WhisperModel) {
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(8.dp))
+            if (recommended != null) {
+                Text("Recommended: ${recommended.displayName}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+            }
             Text(
-                "Recommended: ${recommended.displayName}",
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold,
+                if (bench == null) "Based on memory only. Run the speed test for a recommendation that fits this phone."
+                else "Based on a speed test (${java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(bench.measuredAt))}): " +
+                    "the most accurate model that does a 1-hour lecture in about ${WhisperModels.TARGET_MINUTES_PER_HOUR.toInt()} min or less with the app open.",
+                style = MaterialTheme.typography.bodySmall,
             )
+            Spacer(Modifier.height(8.dp))
+            when (check) {
+                is CheckState.Running -> {
+                    Text(check.message, style = MaterialTheme.typography.bodySmall)
+                    LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 6.dp))
+                }
+                else -> {
+                    if (check is CheckState.Failed) Text(check.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    FilledTonalButton(onClick = onCheck) { Text(if (bench == null) "Test this phone's speed" else "Test again") }
+                }
+            }
         }
     }
 }
@@ -189,6 +240,13 @@ private fun ModelCard(
                         }
                     }
                     Text(m.description, style = MaterialTheme.typography.bodySmall)
+                    row.minutesPerHour?.let { min ->
+                        Text(
+                            "1-hour lecture ≈ ${formatMinutes(min)} with the app open" + if (!row.fits) " · needs more memory than this phone has" else "",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (row.fits) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
                 when (val s = row.state) {
                     ModelState.Downloaded -> IconButton(onClick = { onDelete(m) }) {
@@ -216,4 +274,10 @@ private fun ModelCard(
             }
         }
     }
+}
+
+private fun formatMinutes(min: Double): String = when {
+    min < 1 -> "under 1 min"
+    min < 90 -> "${min.toInt().coerceAtLeast(1)} min"
+    else -> "%.1f h".format(min / 60)
 }
