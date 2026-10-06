@@ -97,7 +97,8 @@ fun LazyListScope.notesPane(m: NotesPaneModel) {
         !m.hasTranscript -> item {
             Hint("Notes can be made once this lecture has a transcript, or from its slides: add them in the Slides tab.")
         }
-        !m.ai.isReady -> item {
+        // Notes already made (e.g. restored from a backup) show without an AI set up; only new ones need it.
+        !m.ai.isReady && m.study == null -> item {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
                 Column(Modifier.padding(16.dp)) {
                     Text("Set up Notes AI", style = MaterialTheme.typography.titleMedium)
@@ -415,11 +416,11 @@ private fun RegenerateRow(m: NotesPaneModel) {
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    if (!open) {
-        TextButton(onClick = { open = true }) {
+    if (!open || !m.ai.isReady) {
+        TextButton(onClick = { if (m.ai.isReady) open = true else m.onSetUpAi() }) {
             Icon(Icons.Outlined.Refresh, null)
             Spacer(Modifier.width(6.dp))
-            Text("Make new notes")
+            Text(if (m.ai.isReady) "Make new notes" else "Make new notes (set up Notes AI first)")
         }
     } else {
         GenerateCard(m, retry = false)
