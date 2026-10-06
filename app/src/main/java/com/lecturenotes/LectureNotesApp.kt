@@ -38,8 +38,17 @@ class LectureNotesApp : Application() {
         aiSettings = ProviderSettings(this)
         settings = AppSettings(this)
         createNotificationChannels()
+        showRestoreResult()
         appScope.launch { recoverInterruptedRecordings() }
         appScope.launch { com.lecturenotes.study.CardSync.backfill(db) }
+    }
+
+    /** A restore restarts the app; say how it went once it's back. */
+    private fun showRestoreResult() {
+        val prefs = getSharedPreferences("restore", MODE_PRIVATE)
+        val message = prefs.getString("message", null) ?: return
+        prefs.edit().remove("message").apply()
+        android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show()
     }
 
     /** A recording left in RECORDING state means the process died mid-capture; keep what was saved. */

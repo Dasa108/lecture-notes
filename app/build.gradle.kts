@@ -9,6 +9,7 @@ plugins {
 android {
     namespace = "com.lecturenotes"
     compileSdk = 34
+    testOptions { unitTests { isIncludeAndroidResources = true } }
     ndkVersion = "27.2.12479018"
 
     defaultConfig {
@@ -124,4 +125,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // Android's org.json is a stub in local unit tests; use the real one.
     testImplementation("org.json:json:20240303")
+    // Real Android SQLite and files on the JVM, for backup/restore.
+    testImplementation("org.robolectric:robolectric:4.13")
+    testImplementation("androidx.test:core:1.6.1")
 }

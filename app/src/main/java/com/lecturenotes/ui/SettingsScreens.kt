@@ -98,6 +98,7 @@ fun SettingsScreen(onBack: () -> Unit, onSpeechModels: () -> Unit, onNotesAi: ()
                 onNotesAi,
             )
             StorageCard()
+            BackupCard()
             val autoSpeakers by context.app.settings.autoSpeakersFlow.collectAsState()
             Card(Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
