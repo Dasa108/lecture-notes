@@ -66,7 +66,12 @@ class NotesPaneModel(
     val hasSlides: Boolean,
     val onOpenSlide: (Int) -> Unit,
     val transcriptChars: Int,
-    val onGenerate: (NoteStyle, limit: Boolean) -> Unit,
+    val onGenerate: (NoteStyle, limit: Boolean, cards: Int?, quiz: Int?) -> Unit,
+    /** Automatic (flashcards, quiz) counts for a style; shown next to "Auto". */
+    val autoCounts: (NoteStyle) -> Pair<Int, Int>,
+    /** Last chosen counts; null = Auto. */
+    val cardsDefault: Int?,
+    val quizDefault: Int?,
     /** Whether "Limit length" starts switched on (the last choice). */
     val limitDefault: Boolean,
     /** The word budget a style would get for this lecture. */
@@ -187,6 +192,11 @@ private fun GenerateCard(m: NotesPaneModel, retry: Boolean) {
                 }
                 androidx.compose.material3.Switch(checked = limit, onCheckedChange = { limit = it })
             }
+            var cards by rememberSaveable { mutableStateOf(m.cardsDefault) }
+            var quiz by rememberSaveable { mutableStateOf(m.quizDefault) }
+            val (autoCards, autoQuiz) = m.autoCounts(style)
+            CountRow("Flashcards", cards, autoCards, max = 60) { cards = it }
+            CountRow("Quiz questions", quiz, autoQuiz, max = 30) { quiz = it }
             Spacer(Modifier.height(12.dp))
             val tokens = NotesGenerator.estimateTokens("x".repeat(m.transcriptChars))
             val words = m.transcriptChars / 6
@@ -219,7 +229,7 @@ private fun GenerateCard(m: NotesPaneModel, retry: Boolean) {
             }
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = { m.onGenerate(style, limit) }) {
+                Button(onClick = { m.onGenerate(style, limit, cards, quiz) }) {
                     Icon(Icons.Outlined.AutoAwesome, null)
                     Spacer(Modifier.width(8.dp))
                     Text(if (retry) "Try again" else "Generate notes")
@@ -317,6 +327,32 @@ private fun LazyListScope.studyNotes(n: StudyNotes, m: NotesPaneModel) {
     item {
         HorizontalDivider(Modifier.padding(vertical = 16.dp))
         RegenerateRow(m)
+    }
+}
+
+/** "Flashcards  [−] 20 [+]  Auto": a number the user picks, or Auto (scaled by lecture length). */
+@Composable
+private fun CountRow(label: String, value: Int?, auto: Int, max: Int, onChange: (Int?) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        androidx.compose.material3.IconButton(onClick = { onChange(((value ?: auto) - 1).coerceAtLeast(0)) }, enabled = (value ?: auto) > 0) {
+            Text("−", style = MaterialTheme.typography.titleLarge)
+        }
+        Text(
+            when (value) {
+                null -> "Auto (~$auto)"
+                0 -> "None"
+                else -> "$value"
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (value != null) FontWeight.SemiBold else FontWeight.Normal,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.width(92.dp),
+        )
+        androidx.compose.material3.IconButton(onClick = { onChange(((value ?: auto) + 1).coerceAtMost(max)) }, enabled = (value ?: auto) < max) {
+            Text("+", style = MaterialTheme.typography.titleLarge)
+        }
+        TextButton(onClick = { onChange(null) }, enabled = value != null) { Text("Auto") }
     }
 }
 

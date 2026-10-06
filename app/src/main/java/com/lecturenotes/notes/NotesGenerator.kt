@@ -23,6 +23,9 @@ data class NotesInput(
     val speakers: Boolean = false,
     /** Word budget for the reading part of the notes; null = no limit (see [NotesLength]). */
     val wordBudget: Int? = null,
+    /** Exact flashcard / quiz question counts the user chose; null = automatic. */
+    val flashcardTarget: Int? = null,
+    val quizTarget: Int? = null,
 ) {
     /** Words in the source (transcript or slide text), used to share the budget between parts. */
     val sourceWords: Int get() = lines.sumOf { NotesLength.words(it.text) }.coerceAtLeast(1)
@@ -84,7 +87,7 @@ class NotesGenerator(
         if (resume == null && estimateTokens(whole) + overhead + singleSlides + single <= requestLimit) {
             try {
                 progress.status("Writing notes…", null)
-                val counts = Prompts.counts(input.style, input.durationMs, whole = true)
+                val counts = wholeCounts(input)
                 val slides = slideContext(input, input.lines, budget = SINGLE_SLIDE_TOKENS)
                 val json = callJson(
                     input.systemPrompt,
@@ -94,7 +97,8 @@ class NotesGenerator(
                     ),
                     single,
                 )
-                return withinBudget(StudyNotes.parse(json, input.durationMs, input.title), input)
+                val parsed = StudyNotes.parse(json, input.durationMs, input.title)
+                return withinBudget(capCounts(parsed, input, counts), input)
             } catch (e: LlmException.TooLarge) {
                 learnLimit(e, estimateTokens(whole) + overhead + singleSlides + single)
             } catch (e: LlmException.Truncated) {
@@ -138,7 +142,7 @@ class NotesGenerator(
         val isSlides = input.source == Prompts.Source.SLIDES
         // For slides, size the quiz/flashcard counts by how much text the part has (~150 words ≈ 1 minute of speech).
         val span = if (isSlides) lines.sumOf { it.text.length } / 900L * 60_000L else endMs - startMs
-        val counts = Prompts.counts(input.style, span, whole = false)
+        val counts = partCounts(input, lines, Prompts.counts(input.style, span, whole = false))
         val range = if (isSlides) "${lines.first().page}–${lines.last().page}" else "${formatTimestamp(startMs)}–${formatTimestamp(endMs)}"
         return try {
             callJson(
@@ -164,10 +168,11 @@ class NotesGenerator(
         val parsed = StudyNotes.parse(merged, input.durationMs, input.title)
         val notes = parsed.copy(sections = mergeContinuations(parsed.sections))
         // Deduplicate terms and trim flashcards/quiz to the counts for the whole lecture, spread across parts.
-        val counts = Prompts.counts(input.style, input.durationMs, whole = true)
+        val counts = wholeCounts(input)
         val terms = spread(notes.keyTerms.distinctBy { it.term.lowercase() }, counts.keyTerms * 3 / 2)
-        val cards = spread(notes.flashcards.distinctBy { it.front.lowercase() }, counts.flashcards * 3 / 2)
-        val quiz = spread(notes.quiz.distinctBy { it.question.lowercase() }, counts.quiz * 3 / 2)
+        // Automatic counts allow some slack; a number the user chose is a hard cap.
+        val cards = spread(notes.flashcards.distinctBy { it.front.lowercase() }, input.flashcardTarget ?: (counts.flashcards * 3 / 2))
+        val quiz = spread(notes.quiz.distinctBy { it.question.lowercase() }, input.quizTarget ?: (counts.quiz * 3 / 2))
 
         // A small final request for a title and overview of the whole lecture.
         progress.status("Finishing up…", parts.size.toFloat() / (parts.size + 1))
@@ -185,6 +190,31 @@ class NotesGenerator(
             quiz = quiz,
         ), input)
     }
+
+    /** Counts for the whole lecture: automatic (scaled by length) unless the user chose them. */
+    private fun wholeCounts(input: NotesInput): Prompts.Counts {
+        // Slides have no duration; ~150 words of slide text stands in for a minute of lecture.
+        val span = if (input.source == Prompts.Source.SLIDES) input.sourceWords / 150L * 60_000L else input.durationMs
+        val auto = Prompts.counts(input.style, span, whole = true)
+        return auto.copy(flashcards = input.flashcardTarget ?: auto.flashcards, quiz = input.quizTarget ?: auto.quiz)
+    }
+
+    /** A part's share of user-chosen counts (at least 1 if any were asked for); automatic otherwise. */
+    private fun partCounts(input: NotesInput, lines: List<TranscriptLine>, auto: Prompts.Counts): Prompts.Counts {
+        val share = lines.sumOf { NotesLength.words(it.text) }.toDouble() / input.sourceWords
+        fun part(target: Int?, fallback: Int) = when {
+            target == null -> fallback
+            target == 0 -> 0
+            else -> (target * share).let { kotlin.math.round(it).toInt() }.coerceAtLeast(1)
+        }
+        return auto.copy(flashcards = part(input.flashcardTarget, auto.flashcards), quiz = part(input.quizTarget, auto.quiz))
+    }
+
+    /** In one-pass mode, trims anything beyond the user's chosen counts. */
+    private fun capCounts(n: StudyNotes, input: NotesInput, counts: Prompts.Counts) = n.copy(
+        flashcards = input.flashcardTarget?.let { spread(n.flashcards, it) } ?: n.flashcards,
+        quiz = input.quizTarget?.let { spread(n.quiz, it) } ?: n.quiz,
+    )
 
     /** This part's share of the word budget, in proportion to how much of the lecture it covers. */
     private fun partWordLimit(input: NotesInput, lines: List<TranscriptLine>): Int? {
@@ -254,7 +284,7 @@ class NotesGenerator(
     private fun promptOverhead(input: NotesInput): Int {
         val template = Prompts.request(
             input.title, input.subject, input.style, transcript = "",
-            counts = Prompts.counts(input.style, input.durationMs, whole = true),
+            counts = wholeCounts(input),
             part = 99 to 99, range = "0:00:00–0:00:00", source = input.source, speakers = input.speakers,
             wordLimit = input.wordBudget,
         )
@@ -361,7 +391,8 @@ class NotesGenerator(
 
         /** Keeps at most [max] items, taken evenly across the list so every part of the lecture is covered. */
         private fun <T> spread(items: List<T>, max: Int): List<T> {
-            if (items.size <= max || max <= 0) return items
+            if (max <= 0) return emptyList()
+            if (items.size <= max) return items
             return (0 until max).map { items[it * items.size / max] }
         }
     }

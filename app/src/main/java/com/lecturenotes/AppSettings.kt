@@ -38,6 +38,14 @@ class AppSettings(context: Context) {
         _limitNotes.value = on
     }
 
+    /** Last chosen flashcard / quiz counts for notes; null = automatic. */
+    var flashcardCount: Int?
+        get() = prefs.getInt(KEY_CARDS, -1).takeIf { it >= 0 }
+        set(v) = prefs.edit { putInt(KEY_CARDS, v ?: -1) }
+    var quizCount: Int?
+        get() = prefs.getInt(KEY_QUIZ, -1).takeIf { it >= 0 }
+        set(v) = prefs.edit { putInt(KEY_QUIZ, v ?: -1) }
+
     fun setAutoSpeakers(on: Boolean) {
         prefs.edit { putBoolean(KEY_AUTO_SPEAKERS, on) }
         _autoSpeakers.value = on
@@ -47,5 +55,7 @@ class AppSettings(context: Context) {
         const val KEY_AUTO_SPEAKERS = "auto_speakers"
         const val KEY_COMPRESS_AUDIO = "compress_audio"
         const val KEY_LIMIT_NOTES = "limit_notes"
+        const val KEY_CARDS = "flashcard_count"
+        const val KEY_QUIZ = "quiz_count"
     }
 }

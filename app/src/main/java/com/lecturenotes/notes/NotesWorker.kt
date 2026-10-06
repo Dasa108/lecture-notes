@@ -66,6 +66,8 @@ class NotesWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
                     slides = reference,
                     speakers = labelled,
                     wordBudget = notes.wordBudget,
+                    flashcardTarget = notes.flashcardCount,
+                    quizTarget = notes.quizCount,
                 ),
                 PartialRun.parse(notes.partialJson),
             )

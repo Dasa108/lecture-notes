@@ -205,7 +205,9 @@ object Prompts {
                     "important points, merge related ones, and drop minor details rather than going over.",
             )
         }
-        appendLine("Write at most ${counts.keyTerms} key terms, about ${counts.flashcards} flashcards and ${counts.quiz} quiz questions")
+        val cards = if (counts.flashcards == 0) "no flashcards (leave \"flashcards\" empty)" else "about ${counts.flashcards} flashcards"
+        val quiz = if (counts.quiz == 0) "no quiz questions (leave \"quiz\" empty)" else "about ${counts.quiz} quiz questions"
+        appendLine("Write at most ${counts.keyTerms} key terms, $cards and $quiz")
         appendLine("(quiz mostly multiple choice with 4 options;")
         appendLine("use an empty options list for a short-answer question). Flashcards and questions must test understanding of")
         appendLine("what was actually taught, not trivia about the lecture itself.")

@@ -54,6 +54,9 @@ data class Notes(
     val createdAt: Long = System.currentTimeMillis(),
     /** Target length in words for the reading part of the notes; null = no limit. */
     val wordBudget: Int? = null,
+    /** Exact number of flashcards / quiz questions the user asked for; null = automatic. */
+    val flashcardCount: Int? = null,
+    val quizCount: Int? = null,
 )
 
 enum class AttachmentKind { PDF, PPTX, IMAGE, TEXT }

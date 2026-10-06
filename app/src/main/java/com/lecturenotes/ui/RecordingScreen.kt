@@ -225,15 +225,25 @@ class RecordingViewModel(application: Application, private val id: Long) : Andro
         else com.lecturenotes.notes.NotesLength.budget(style, slideWords, slides = true)
     }
 
-    fun generateNotes(style: NoteStyle, limit: Boolean) = viewModelScope.launch {
+    /** The automatic flashcard / quiz counts for a style, as the generator would pick them. */
+    fun autoCounts(style: NoteStyle): Pair<Int, Int> {
+        val span = recording.value?.durationMs?.takeIf { it > 0 }
+            ?: (slides.value.sumOf { com.lecturenotes.notes.NotesLength.words(it.page.text) } / 150L * 60_000L)
+        val c = com.lecturenotes.notes.Prompts.counts(style, span, whole = true)
+        return c.flashcards to c.quiz
+    }
+
+    fun generateNotes(style: NoteStyle, limit: Boolean, cards: Int?, quiz: Int?) = viewModelScope.launch {
         val ai = aiConfig.value
         val model = ai.model ?: return@launch
         val budget = if (limit) wordBudget(style) else null
         app.settings.setLimitNotes(limit)
+        app.settings.flashcardCount = cards
+        app.settings.quizCount = quiz
         val previous = app.db.notes().getFor(id)
         val resumable = previous?.takeIf {
             it.status == NotesStatus.FAILED && it.style == style.name && it.provider == ai.preset.id && it.model == model &&
-                it.wordBudget == budget
+                it.wordBudget == budget && it.flashcardCount == cards && it.quizCount == quiz
         }?.partialJson
         app.db.notes().upsert(
             Notes(
@@ -242,6 +252,8 @@ class RecordingViewModel(application: Application, private val id: Long) : Andro
                 // Keep the previous notes until the new ones are finished, in case this run fails.
                 json = previous?.json,
                 wordBudget = budget,
+                flashcardCount = cards,
+                quizCount = quiz,
             ),
         )
         Jobs.generateNotes(app, id)
@@ -495,6 +507,9 @@ fun RecordingScreen(
                 onGenerate = vm::generateNotes,
                 limitDefault = limitNotes,
                 budgetFor = vm::wordBudget,
+                autoCounts = vm::autoCounts,
+                cardsDefault = context.app.settings.flashcardCount,
+                quizDefault = context.app.settings.quizCount,
                 onCancel = { vm.cancelNotes() },
                 onSeek = { vm.seekTo(it, play = true) },
                 onSetUpAi = onNotesAi,
