@@ -52,6 +52,8 @@ data class Notes(
     /** Human-readable progress ("Writing notes: part 2 of 5…") or the error when FAILED. */
     val message: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
+    /** Target length in words for the reading part of the notes; null = no limit. */
+    val wordBudget: Int? = null,
 )
 
 enum class AttachmentKind { PDF, PPTX, IMAGE, TEXT }

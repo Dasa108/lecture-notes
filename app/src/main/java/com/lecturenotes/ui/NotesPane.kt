@@ -66,7 +66,11 @@ class NotesPaneModel(
     val hasSlides: Boolean,
     val onOpenSlide: (Int) -> Unit,
     val transcriptChars: Int,
-    val onGenerate: (NoteStyle) -> Unit,
+    val onGenerate: (NoteStyle, limit: Boolean) -> Unit,
+    /** Whether "Limit length" starts switched on (the last choice). */
+    val limitDefault: Boolean,
+    /** The word budget a style would get for this lecture. */
+    val budgetFor: (NoteStyle) -> Int,
     val onCancel: () -> Unit,
     val onSeek: (Long) -> Unit,
     val onSetUpAi: () -> Unit,
@@ -170,6 +174,19 @@ private fun GenerateCard(m: NotesPaneModel, retry: Boolean) {
                 }
             }
             Text(style.description, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
+            var limit by rememberSaveable { mutableStateOf(m.limitDefault) }
+            Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Limit length", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        if (limit) "About ${"%,d".format(m.budgetFor(style))} words of notes (flashcards and quiz extra)"
+                        else "No limit: as long as the AI needs to cover everything",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                androidx.compose.material3.Switch(checked = limit, onCheckedChange = { limit = it })
+            }
             Spacer(Modifier.height(12.dp))
             val tokens = NotesGenerator.estimateTokens("x".repeat(m.transcriptChars))
             val words = m.transcriptChars / 6
@@ -202,7 +219,7 @@ private fun GenerateCard(m: NotesPaneModel, retry: Boolean) {
             }
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = { m.onGenerate(style) }) {
+                Button(onClick = { m.onGenerate(style, limit) }) {
                     Icon(Icons.Outlined.AutoAwesome, null)
                     Spacer(Modifier.width(8.dp))
                     Text(if (retry) "Try again" else "Generate notes")
@@ -357,7 +374,8 @@ private fun RegenerateRow(m: NotesPaneModel) {
     var open by rememberSaveable { mutableStateOf(false) }
     val n = m.notes ?: return
     Text(
-        "Made with ${n.model} on ${ProviderPreset.byId(n.provider)?.label ?: n.provider} · ${n.style.lowercase().replaceFirstChar { it.uppercase() }} style",
+        "Made with ${n.model} on ${ProviderPreset.byId(n.provider)?.label ?: n.provider} · ${n.style.lowercase().replaceFirstChar { it.uppercase() }} style · " +
+            (n.wordBudget?.let { "~${"%,d".format(it)}-word limit" } ?: "no length limit"),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )

@@ -35,7 +35,7 @@ class Converters {
     fun stringToNotesStatus(value: String): NotesStatus = NotesStatus.valueOf(value)
 }
 
-@Database(entities = [Recording::class, Segment::class, Subject::class, Notes::class, ReviewCard::class, QuizAttempt::class, Attachment::class, AttachmentPage::class, Speaker::class], version = 7)
+@Database(entities = [Recording::class, Segment::class, Subject::class, Notes::class, ReviewCard::class, QuizAttempt::class, Attachment::class, AttachmentPage::class, Speaker::class], version = 8)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun recordings(): RecordingDao
@@ -50,8 +50,15 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "lecturenotes.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .build()
+
+        /** v8: optional length limit for notes. */
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `notes` ADD COLUMN `wordBudget` INTEGER")
+            }
+        }
 
         /** v7: speaker labels. */
         private val MIGRATION_6_7 = object : Migration(6, 7) {

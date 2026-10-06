@@ -21,7 +21,12 @@ data class NotesInput(
     val slides: List<TranscriptLine> = emptyList(),
     /** Transcript lines carry speaker labels (2+ speakers were found). */
     val speakers: Boolean = false,
+    /** Word budget for the reading part of the notes; null = no limit (see [NotesLength]). */
+    val wordBudget: Int? = null,
 ) {
+    /** Words in the source (transcript or slide text), used to share the budget between parts. */
+    val sourceWords: Int get() = lines.sumOf { NotesLength.words(it.text) }.coerceAtLeast(1)
+
     /** Lines are slides when there is no transcript; otherwise slides (if any) are reference. */
     val source: Prompts.Source
         get() = when {
@@ -83,10 +88,13 @@ class NotesGenerator(
                 val slides = slideContext(input, input.lines, budget = SINGLE_SLIDE_TOKENS)
                 val json = callJson(
                     input.systemPrompt,
-                    Prompts.request(input.title, input.subject, input.style, whole, counts, null, "", input.source, slides, input.speakers),
+                    Prompts.request(
+                        input.title, input.subject, input.style, whole, counts, null, "", input.source, slides,
+                        input.speakers, input.wordBudget,
+                    ),
                     single,
                 )
-                return StudyNotes.parse(json, input.durationMs, input.title)
+                return withinBudget(StudyNotes.parse(json, input.durationMs, input.title), input)
             } catch (e: LlmException.TooLarge) {
                 learnLimit(e, estimateTokens(whole) + overhead + singleSlides + single)
             } catch (e: LlmException.Truncated) {
@@ -138,6 +146,7 @@ class NotesGenerator(
                 Prompts.request(
                     input.title, input.subject, input.style, render(lines), counts, index + 1 to count, range,
                     input.source, slideContext(input, lines, budget = PART_SLIDE_TOKENS), input.speakers,
+                    partWordLimit(input, lines),
                 ),
                 partOutputTokens(input.style),
             )
@@ -167,15 +176,25 @@ class NotesGenerator(
             "Part ${i + 1}: ${p.optString("overview")} (Topics: $headings)"
         }.joinToString("\n")
         val top = runCatching { callJson(input.systemPrompt, Prompts.overviewRequest(input.title, summaries), 400) }.getOrNull()
-        return notes.copy(
+        return withinBudget(notes.copy(
             title = top?.optString("title")?.trim()?.ifBlank { null } ?: input.title,
             overview = top?.optString("overview")?.trim()?.ifBlank { null }
                 ?: parts.joinToString(" ") { it.optString("overview") }.trim(),
             keyTerms = terms,
             flashcards = cards,
             quiz = quiz,
-        )
+        ), input)
     }
+
+    /** This part's share of the word budget, in proportion to how much of the lecture it covers. */
+    private fun partWordLimit(input: NotesInput, lines: List<TranscriptLine>): Int? {
+        val budget = input.wordBudget ?: return null
+        val share = lines.sumOf { NotesLength.words(it.text) }.toDouble() / input.sourceWords
+        return (budget * share).toInt().coerceAtLeast(40)
+    }
+
+    private fun withinBudget(notes: StudyNotes, input: NotesInput): StudyNotes =
+        input.wordBudget?.let { NotesLength.enforce(notes, it) } ?: notes
 
     /** Sends a request and parses JSON from the reply, retrying once if the JSON is broken. */
     private suspend fun callJson(system: String, user: String, maxTokens: Int): JSONObject {
@@ -237,6 +256,7 @@ class NotesGenerator(
             input.title, input.subject, input.style, transcript = "",
             counts = Prompts.counts(input.style, input.durationMs, whole = true),
             part = 99 to 99, range = "0:00:00–0:00:00", source = input.source, speakers = input.speakers,
+            wordLimit = input.wordBudget,
         )
         // Reserve room for the reference slides that each part may carry.
         val slides = if (input.source == Prompts.Source.BOTH) PART_SLIDE_TOKENS else 0

@@ -65,6 +65,7 @@ class NotesWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
                     systemPrompt = Prompts.systemPrompt(subject),
                     slides = reference,
                     speakers = labelled,
+                    wordBudget = notes.wordBudget,
                 ),
                 PartialRun.parse(notes.partialJson),
             )

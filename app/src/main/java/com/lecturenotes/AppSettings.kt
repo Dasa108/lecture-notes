@@ -28,6 +28,16 @@ class AppSettings(context: Context) {
         _compressAudio.value = on
     }
 
+    private val _limitNotes = MutableStateFlow(prefs.getBoolean(KEY_LIMIT_NOTES, true))
+
+    /** Generate notes within a length budget (on) or as long as the AI needs (off). */
+    val limitNotesFlow: StateFlow<Boolean> = _limitNotes.asStateFlow()
+
+    fun setLimitNotes(on: Boolean) {
+        prefs.edit { putBoolean(KEY_LIMIT_NOTES, on) }
+        _limitNotes.value = on
+    }
+
     fun setAutoSpeakers(on: Boolean) {
         prefs.edit { putBoolean(KEY_AUTO_SPEAKERS, on) }
         _autoSpeakers.value = on
@@ -36,5 +46,6 @@ class AppSettings(context: Context) {
     private companion object {
         const val KEY_AUTO_SPEAKERS = "auto_speakers"
         const val KEY_COMPRESS_AUDIO = "compress_audio"
+        const val KEY_LIMIT_NOTES = "limit_notes"
     }
 }

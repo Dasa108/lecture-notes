@@ -217,12 +217,23 @@ class RecordingViewModel(application: Application, private val id: Long) : Andro
     }
 
     /** Starts (or resumes, if the last attempt failed with the same settings) notes generation. */
-    fun generateNotes(style: NoteStyle) = viewModelScope.launch {
+    /** Default word budget for a style, from the transcript (or, without one, the slide text). */
+    fun wordBudget(style: NoteStyle): Int {
+        val transcriptWords = segments.value.sumOf { com.lecturenotes.notes.NotesLength.words(it.text) }
+        val slideWords = slides.value.sumOf { com.lecturenotes.notes.NotesLength.words(it.page.text) }
+        return if (transcriptWords > 0) com.lecturenotes.notes.NotesLength.budget(style, transcriptWords, slides = false)
+        else com.lecturenotes.notes.NotesLength.budget(style, slideWords, slides = true)
+    }
+
+    fun generateNotes(style: NoteStyle, limit: Boolean) = viewModelScope.launch {
         val ai = aiConfig.value
         val model = ai.model ?: return@launch
+        val budget = if (limit) wordBudget(style) else null
+        app.settings.setLimitNotes(limit)
         val previous = app.db.notes().getFor(id)
         val resumable = previous?.takeIf {
-            it.status == NotesStatus.FAILED && it.style == style.name && it.provider == ai.preset.id && it.model == model
+            it.status == NotesStatus.FAILED && it.style == style.name && it.provider == ai.preset.id && it.model == model &&
+                it.wordBudget == budget
         }?.partialJson
         app.db.notes().upsert(
             Notes(
@@ -230,6 +241,7 @@ class RecordingViewModel(application: Application, private val id: Long) : Andro
                 provider = ai.preset.id, model = model, partialJson = resumable, message = "Waiting for the network…",
                 // Keep the previous notes until the new ones are finished, in case this run fails.
                 json = previous?.json,
+                wordBudget = budget,
             ),
         )
         Jobs.generateNotes(app, id)
@@ -330,6 +342,7 @@ fun RecordingScreen(
     val slides by vm.slides.collectAsState()
     var tabKey by rememberSaveable { mutableStateOf<String?>(null) }
     val context = LocalContext.current
+    val limitNotes by context.app.settings.limitNotesFlow.collectAsState()
     // "Save as…" for notes: each format picks a file location, then writes to it.
     fun saveTo(write: (java.io.OutputStream) -> Unit): (android.net.Uri?) -> Unit = { uri ->
         if (uri != null) {
@@ -480,6 +493,8 @@ fun RecordingScreen(
                 hasSlides = slides.isNotEmpty(),
                 onOpenSlide = { page -> tabKey = TAB_SLIDES; pendingSlide = page },
                 onGenerate = vm::generateNotes,
+                limitDefault = limitNotes,
+                budgetFor = vm::wordBudget,
                 onCancel = { vm.cancelNotes() },
                 onSeek = { vm.seekTo(it, play = true) },
                 onSetUpAi = onNotesAi,

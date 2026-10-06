@@ -174,6 +174,8 @@ object Prompts {
         slideContext: String? = null,
         /** Transcript lines carry speaker labels like "(Lecturer)": ask for a Class Q&A section. */
         speakers: Boolean = false,
+        /** Word budget for the reading part of these notes (this part, when split); null = no limit. */
+        wordLimit: Int? = null,
     ): String = buildString {
         appendLine("Lecture: $lectureTitle")
         if (subject != null) appendLine("Subject: $subject")
@@ -195,6 +197,14 @@ object Prompts {
             appendLine("the parts will be combined later. Keep \"title\" empty and make \"overview\" 1-2 sentences about this part.")
         }
         appendLine(styleRules(style))
+        if (wordLimit != null) {
+            val scope = if (part != null) "for this part" else "in total"
+            appendLine(
+                "LENGTH LIMIT: at most about $wordLimit words $scope across the overview, headings, bullets, " +
+                    "explanations, key terms and Q&A (flashcards and quiz don't count). Stay within it: keep the most " +
+                    "important points, merge related ones, and drop minor details rather than going over.",
+            )
+        }
         appendLine("Write at most ${counts.keyTerms} key terms, about ${counts.flashcards} flashcards and ${counts.quiz} quiz questions")
         appendLine("(quiz mostly multiple choice with 4 options;")
         appendLine("use an empty options list for a short-answer question). Flashcards and questions must test understanding of")
