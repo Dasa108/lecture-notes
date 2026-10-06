@@ -4,6 +4,7 @@ import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -138,6 +139,22 @@ class NotesGeneratorTest {
         assertEquals(2, client.requests.size)
         assertTrue(Prompts.FIX_JSON.trim() in client.requests[1].user)
         assertEquals(1, notes.sections.size)
+    }
+
+    @Test
+    fun recoversWhenProviderRejectsJson() = runBlocking {
+        // Groq-style: the first reply is rejected server-side but its raw text is repairable.
+        val repairable = FakeClient(script = mutableListOf({ r -> throw LlmException.BadJson("Here you go: " + FakeClient().notesFor(r)) }))
+        val a = NotesGenerator(repairable, config(128_000), RecordingProgress()).generate(lecture(5), null)
+        assertEquals(1, repairable.requests.size)
+        assertEquals(1, a.sections.size)
+
+        // Rejected twice with nothing usable: the third try goes without JSON mode.
+        val stubborn = FakeClient(script = mutableListOf({ _ -> throw LlmException.BadJson(null) }, { _ -> throw LlmException.BadJson("{broken") }))
+        val b = NotesGenerator(stubborn, config(128_000), RecordingProgress()).generate(lecture(5), null)
+        assertEquals(3, stubborn.requests.size)
+        assertFalse(stubborn.requests[2].json)
+        assertEquals(1, b.sections.size)
     }
 
     @Test

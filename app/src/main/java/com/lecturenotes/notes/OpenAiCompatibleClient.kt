@@ -61,9 +61,12 @@ class OpenAiCompatibleClient(private val config: ProviderConfig) : LlmClient {
 
     private fun checkErrors(res: HttpResult) {
         if (res.code in 200..299) return
-        val message = runCatching { JSONObject(res.body).getJSONObject("error").optString("message") }.getOrNull()
-            ?.takeIf { it.isNotBlank() } ?: res.body.take(300)
+        val error = runCatching { JSONObject(res.body).getJSONObject("error") }.getOrNull()
+        val message = error?.optString("message")?.takeIf { it.isNotBlank() } ?: res.body.take(300)
         when {
+            // JSON mode: the provider validated the reply and rejected it. Hand back the attempt so it can be repaired.
+            res.code == 400 && (error?.optString("code") == "json_validate_failed" || "validate JSON" in message) ->
+                throw LlmException.BadJson(error?.optString("failed_generation")?.takeIf { it.isNotBlank() })
             res.code == 401 || res.code == 403 -> throw LlmException.Auth("The API key was rejected ($message)")
             res.code == 404 -> throw LlmException.ModelNotFound(message)
             res.code == 413 || looksTooLarge(message) -> throw LlmException.TooLarge(message, parseTokenLimit(message))

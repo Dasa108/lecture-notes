@@ -21,6 +21,11 @@ sealed class LlmException(message: String) : IOException(message) {
     /** The reply was cut off at max_tokens. */
     class Truncated : LlmException("The AI's reply was cut off")
     class RateLimited(val retryAfterMs: Long) : LlmException("Rate limited")
+    /**
+     * The provider rejected the model's reply as invalid JSON (Groq: "json_validate_failed").
+     * [failedGeneration] is the model's raw attempt, when the provider includes it.
+     */
+    class BadJson(val failedGeneration: String?) : LlmException("The AI's reply wasn't valid JSON")
     class Server(val code: Int, message: String) : LlmException(message)
 }
 

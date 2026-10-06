@@ -228,9 +228,22 @@ class NotesGenerator(
 
     /** Sends a request and parses JSON from the reply, retrying once if the JSON is broken. */
     private suspend fun callJson(system: String, user: String, maxTokens: Int): JSONObject {
-        val reply = call(LlmRequest(system, user, maxTokens))
-        return parseJson(reply.text) ?: parseJson(call(LlmRequest(system, user + Prompts.FIX_JSON, maxTokens)).text)
-            ?: throw IOException("The AI didn't return usable notes. Try again or pick another model.")
+        // 1) Normal request (JSON mode). 2) Again with a "JSON only" reminder. 3) Without JSON mode, parsing
+        // leniently ourselves. If the provider rejects a reply as invalid JSON, its raw attempt is tried first.
+        val attempts = listOf(
+            LlmRequest(system, user, maxTokens),
+            LlmRequest(system, user + Prompts.FIX_JSON, maxTokens),
+            LlmRequest(system, user + Prompts.FIX_JSON, maxTokens, json = false),
+        )
+        for (request in attempts) {
+            val text = try {
+                call(request).text
+            } catch (e: LlmException.BadJson) {
+                e.failedGeneration ?: continue
+            }
+            parseJson(text)?.let { return it }
+        }
+        throw IOException("The AI didn't return usable notes. Try again or pick another model.")
     }
 
     /** Calls the model, waiting out rate limits and retrying transient failures. */
