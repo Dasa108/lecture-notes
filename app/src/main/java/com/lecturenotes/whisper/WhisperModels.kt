@@ -6,9 +6,12 @@ data class WhisperModel(
     val sizeBytes: Long,
     val minRamGb: Double,
     /**
-     * Cost relative to Tiny for the encoder and the (greedy) decoder, used to turn a Tiny benchmark into
-     * estimates for every model. Measured on a Snapdragon 8s Gen 4 with the bundled 30 s speech clip:
-     * encode per 30 s ≈ Tiny 0.6 s, Base 1.3 s, Small 4.8 s, Medium 13.5 s.
+     * Encoder cost and decoding cost per 30 s window, both as multiples of *Tiny's encode time*, used
+     * to turn the in-app Tiny benchmark into estimates for every model. The benchmark clip's decode is
+     * unrealistically cheap (repetitive speech), so decoding is estimated from encode instead.
+     * Measured with whisper-cli (greedy) on a Snapdragon 8s Gen 4: encode Tiny 0.54 s, Base ~1.2 s,
+     * Small ~4.6 s, Medium ~12.5 s; decode Tiny 1.4 s, Base ~2.2 s, Small 3.6 s. The resulting
+     * estimate for Small (~15 min per lecture hour) matches the app's own measured ~17 min.
      */
     val encodeRatio: Double,
     val decodeRatio: Double,
@@ -21,16 +24,16 @@ data class WhisperModel(
 
 object WhisperModels {
     val all = listOf(
-        WhisperModel("tiny.en-q5_1", "Tiny", 32_166_155, 2.0, 1.0, 1.0,
+        WhisperModel("tiny.en-q5_1", "Tiny", 32_166_155, 2.0, 1.0, 2.6,
             "Fastest. Good for quick drafts and older phones.",
             "c77c5766f1cef09b6b7d47f21b546cbddd4157886b3b5d6d4f709e91e66c7c2b"),
-        WhisperModel("base.en-q5_1", "Base", 59_721_011, 3.0, 2.2, 1.3,
+        WhisperModel("base.en-q5_1", "Base", 59_721_011, 3.0, 2.2, 4.0,
             "Balanced speed and accuracy for mid-range phones.",
             "4baf70dd0d7c4247ba2b81fafd9c01005ac77c2f9ef064e00dcf195d0e2fdd2f"),
-        WhisperModel("small.en-q5_1", "Small", 190_098_681, 6.0, 8.5, 1.8,
+        WhisperModel("small.en-q5_1", "Small", 190_098_681, 4.0, 8.5, 6.7,
             "Much better on lectures and technical vocabulary.",
             "bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30"),
-        WhisperModel("medium.en-q5_0", "Medium", 539_225_533, 8.0, 23.0, 2.5,
+        WhisperModel("medium.en-q5_0", "Medium", 539_225_533, 6.0, 23.0, 9.0,
             "Most accurate. Flagship phones; slow on long recordings.",
             "76733e26ad8fe1c7a5bf7531a9d41917b2adc0f20f2e4f5531688a8c6cd88eb0"),
     )

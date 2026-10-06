@@ -5,3 +5,6 @@
 
 # sherpa-onnx's native code reads its Kotlin config/result classes by field name.
 -keep class com.k2fsa.sherpa.onnx.** { *; }
+
+# PdfBox-Android's JPEG-2000 decoder is an optional extra library we don't ship.
+-dontwarn com.gemalto.jp2.**

@@ -193,7 +193,7 @@ data class Recording(
     val speakerProgress: Float? = null,
 )
 
-enum class SpeakerStatus { QUEUED, RUNNING, DONE, FAILED }
+enum class SpeakerStatus { QUEUED, RUNNING, PAUSED, DONE, FAILED }
 
 /** A voice found in a recording by speaker labelling. */
 @Entity(

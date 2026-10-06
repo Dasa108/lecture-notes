@@ -19,6 +19,10 @@ import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.SaveAlt
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -74,6 +78,8 @@ class NotesPaneModel(
     val attempts: List<com.lecturenotes.data.QuizAttempt>,
     val onStudyCards: () -> Unit,
     val onQuiz: () -> Unit,
+    /** Save the notes as a file: "md", "pdf" or "anki". */
+    val onExport: (String) -> Unit,
 )
 
 fun LazyListScope.notesPane(m: NotesPaneModel) {
@@ -219,6 +225,7 @@ private fun LazyListScope.studyNotes(n: StudyNotes, m: NotesPaneModel) {
             StudyActions(m, n)
             Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 AssistChip(onClick = m.onShare, label = { Text("Share") }, leadingIcon = { Icon(Icons.Outlined.Share, null) })
+                ExportChip(m, hasCards = n.flashcards.isNotEmpty())
             }
         }
     }
@@ -293,6 +300,19 @@ private fun LazyListScope.studyNotes(n: StudyNotes, m: NotesPaneModel) {
     item {
         HorizontalDivider(Modifier.padding(vertical = 16.dp))
         RegenerateRow(m)
+    }
+}
+
+@Composable
+private fun ExportChip(m: NotesPaneModel, hasCards: Boolean) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    Box {
+        AssistChip(onClick = { open = true }, label = { Text("Save as…") }, leadingIcon = { Icon(Icons.Outlined.SaveAlt, null) })
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(text = { Text("PDF") }, onClick = { open = false; m.onExport("pdf") })
+            DropdownMenuItem(text = { Text("Markdown (.md)") }, onClick = { open = false; m.onExport("md") })
+            if (hasCards) DropdownMenuItem(text = { Text("Flashcards for Anki (.txt)") }, onClick = { open = false; m.onExport("anki") })
+        }
     }
 }
 

@@ -17,8 +17,8 @@ fun statusLabel(rec: Recording): String = when (rec.status) {
     RecordingStatus.RECORDING -> "Recording…"
     RecordingStatus.IMPORTING -> "Importing ${(rec.progress * 100).toInt()}%"
     RecordingStatus.READY -> if (rec.error != null) "Waiting for a speech model" else "Not transcribed"
-    RecordingStatus.QUEUED -> "Waiting to transcribe"
-    RecordingStatus.TRANSCRIBING -> "Transcribing ${(rec.progress * 100).toInt()}%"
+    RecordingStatus.QUEUED -> "Waiting to transcribe (waits while battery is low unless charging)"
+    RecordingStatus.TRANSCRIBING -> "Transcribing ${(rec.progress * 100).toInt()}%" + (rec.error?.let { " · $it" } ?: "")
     RecordingStatus.TRANSCRIBED -> "Transcribed"
     RecordingStatus.FAILED -> "Failed"
     RecordingStatus.DOCUMENT -> "Slides only"

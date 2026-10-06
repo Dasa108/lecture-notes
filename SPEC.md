@@ -188,6 +188,16 @@ The exact models are configured in a remote-updatable `models.json` so they can 
 - **Battery and thermals:** long jobs pause when the phone gets too hot (`PowerManager` thermal status) or the battery is below 15% and not charging.
 - **Accessibility:** dynamic text size, TalkBack labels, and a dark theme.
 
+## 11b. Polish (built in M8)
+
+- **Release build:** arm64-only (x86_64 stays in debug builds for the emulator): **28.5 MB** vs 75 MB debug. R8 rules for sherpa-onnx (JNI reads fields by name) and PdfBox's optional JPEG-2000 decoder. Signed with a release key kept outside the repo (`~/.android/lecturenotes-release.jks`, password in git-ignored `keystore.properties`). A `releaseTest` variant (R8 code, separate app id) was smoke-tested on the phone: launch, PDF text layer, OCR, Whisper speed test, transcription, compression, speaker labelling on compressed audio, slide search.
+- **Battery and heat:** transcription and speaker labelling wait while the battery is low (WorkManager `batteryNotLow`; transcription is no longer expedited, which WorkManager forbids with that constraint). Between chunks/pieces they pause at `THERMAL_STATUS_SEVERE` and resume at `LIGHT`, showing "Paused: letting the phone cool down".
+- **Audio compression:** after transcription the WAV is re-encoded to AAC 32 kbps .m4a (~115 → ~14 MB per hour; measured 960 KB → 124 KB), verified by duration before the WAV is deleted. Speaker labelling decodes to a temporary WAV; re-transcribing goes back through the import path. A Settings switch (on by default) and a one-off "Free up ~X MB" for older recordings.
+- **Exports:** Save as PDF (A4, headings/bullets/explanations/terms/Q&A/flashcards/quiz with answers), Markdown, and Anki text import (tab-separated with `#deck`/`#notetype` headers).
+- **Search:** also matches slide/PDF text ("Slides: …").
+- **Model estimates recalibrated:** the in-app clip's decode is unrealistically cheap, so per-model time = Tiny encode × (encode ratio + decode ratio), with ratios from whisper-cli greedy runs. Small ≈ 15 min/hour (app measured ~17). Medium's RAM requirement is lowered to 6 GB.
+- **Not done:** tags (subjects cover organisation), Whisper vocabulary hints from slides.
+
 ## 12. Milestones
 
 1. **M1: Capture and transcribe.** Recording service, import, whisper.cpp JNI, chunked background transcription, transcript view.

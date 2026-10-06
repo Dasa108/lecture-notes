@@ -30,8 +30,7 @@ class SpeakerWorker(context: Context, params: WorkerParameters) : CoroutineWorke
 
     override suspend fun doWork(): Result {
         val rec = app.db.recordings().get(recordingId) ?: return Result.success()
-        val wav = File(rec.audioPath)
-        if (!wav.exists()) return Result.success()
+        if (!File(rec.audioPath).exists()) return Result.success()
         setForeground(foregroundInfo())
         val recordings = app.db.recordings()
         return try {
@@ -41,12 +40,19 @@ class SpeakerWorker(context: Context, params: WorkerParameters) : CoroutineWorke
                 withContext(Dispatchers.Default) {
                     Diarizer(applicationContext, DeviceInfo.threadsForCurrentThread()).use { d ->
                         var last = 0f
-                        d.run(wav, onProgress = { p ->
+                        // Compressed recordings are expanded to a temporary WAV for the run.
+                        com.lecturenotes.audio.AudioStorage.withWav(applicationContext, rec) { wav -> d.run(wav, onProgress = { p ->
                             if (p - last >= 0.02f || p >= 1f) {
                                 last = p
                                 runBlocking { recordings.setSpeakerStatus(recordingId, SpeakerStatus.RUNNING.name, 0.1f + p * 0.9f) }
                             }
-                        }, isCancelled = { isStopped })
+                        }, isCancelled = { isStopped }, beforePiece = {
+                            com.lecturenotes.transcribe.Thermal.waitWhileHot(
+                                applicationContext, isCancelled = { isStopped },
+                                onPause = { runBlocking { recordings.setSpeakerStatus(recordingId, SpeakerStatus.PAUSED.name, last) } },
+                                onResume = { runBlocking { recordings.setSpeakerStatus(recordingId, SpeakerStatus.RUNNING.name, last) } },
+                            )
+                        }) }
                     }
                 }
             }

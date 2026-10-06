@@ -20,9 +20,12 @@ data class BenchResult(
     val threads: Int,
     val measuredAt: Long,
 ) {
-    /** Estimated minutes to transcribe one hour of lecture with the app open (120 windows of 30 s). */
+    /**
+     * Estimated minutes to transcribe one hour of lecture with the app open (120 windows of 30 s).
+     * Both encode and decode are scaled from Tiny's encode time (see [WhisperModel.encodeRatio]).
+     */
     fun minutesPerHour(model: WhisperModel): Double =
-        (encodeMs * model.encodeRatio + decodeMs * model.decodeRatio) * WINDOWS_PER_HOUR / 60_000.0
+        encodeMs * (model.encodeRatio + model.decodeRatio) * WINDOWS_PER_HOUR / 60_000.0
 
     fun toJson(): String = JSONObject().put("encode", encodeMs).put("decode", decodeMs)
         .put("threads", threads).put("at", measuredAt).toString()

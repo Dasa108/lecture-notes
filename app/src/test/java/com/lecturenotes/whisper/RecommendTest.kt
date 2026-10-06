@@ -12,7 +12,7 @@ class RecommendTest {
 
     /** Tiny on the vivo I2405 (Snapdragon 8s Gen 4): ~0.6 s encode, ~1.4 s decode per 30 s. */
     private val fastPhone = BenchResult(encodeMs = 600.0, decodeMs = 1400.0, threads = 6, measuredAt = 0)
-    private val slowPhone = BenchResult(encodeMs = 2500.0, decodeMs = 2500.0, threads = 4, measuredAt = 0)
+    private val slowPhone = BenchResult(encodeMs = 1200.0, decodeMs = 0.0, threads = 4, measuredAt = 0)
 
     @Test
     fun estimatesMatchWhatWeMeasuredOnTheTestPhone() {

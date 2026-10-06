@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -16,10 +18,6 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
-        ndk {
-            // arm64 for real phones, x86_64 so the app also runs on the emulator.
-            abiFilters += listOf("arm64-v8a", "x86_64")
-        }
         externalNativeBuild {
             cmake {
                 arguments += listOf("-DANDROID_STL=c++_shared")
@@ -27,15 +25,44 @@ android {
         }
     }
 
+    // Release signing key lives outside the repo; keystore.properties (git-ignored) points to it.
+    val keystoreProps = Properties().apply {
+        rootProject.file("keystore.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+    }
+    signingConfigs {
+        if (keystoreProps.isNotEmpty()) {
+            create("release") {
+                storeFile = file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         debug {
+            // arm64 for real phones, x86_64 so debug builds also run on the emulator.
+            ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
             // whisper.cpp is unusably slow at -O0, so always build native code optimised.
             externalNativeBuild { cmake { arguments += "-DCMAKE_BUILD_TYPE=Release" } }
         }
         release {
+            // Real phones only: the x86_64 libraries (~30 MB) exist for the emulator.
+            ndk { abiFilters += "arm64-v8a" }
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+        }
+        // The optimised (R8) release code under its own app id, so it can be smoke-tested on a phone
+        // next to the installed app without replacing it or touching its data.
+        create("releaseTest") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".releasetest"
             signingConfig = signingConfigs.getByName("debug")
+            // Debuggable only so test files can be staged with run-as; the R8-optimised code is unchanged.
+            isDebuggable = true
+            matchingFallbacks += "release"
         }
     }
 

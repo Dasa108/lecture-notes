@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.RecordVoiceOver
+import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
@@ -96,6 +97,7 @@ fun SettingsScreen(onBack: () -> Unit, onSpeechModels: () -> Unit, onNotesAi: ()
                 if (ai.isReady) ai.displayName else "Not set up: needed to generate study notes",
                 onNotesAi,
             )
+            StorageCard()
             val autoSpeakers by context.app.settings.autoSpeakersFlow.collectAsState()
             Card(Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -110,6 +112,44 @@ fun SettingsScreen(onBack: () -> Unit, onSpeechModels: () -> Unit, onNotesAi: ()
                         )
                     }
                     androidx.compose.material3.Switch(checked = autoSpeakers, onCheckedChange = { context.app.settings.setAutoSpeakers(it) })
+                }
+            }
+        }
+    }
+}
+
+/** Audio compression switch, and a one-off "free up space" for recordings made before it. */
+@Composable
+private fun StorageCard() {
+    val context = LocalContext.current
+    val compress by context.app.settings.compressAudioFlow.collectAsState()
+    var pending by remember { mutableStateOf<Pair<Int, Long>?>(null) }
+    var started by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(started) { pending = com.lecturenotes.audio.AudioStorage.uncompressed(context) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Storage, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Compress audio after transcription", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Keeps lectures at ~14 MB per hour instead of ~115 MB. Playback is unaffected; re-transcribing " +
+                            "or labelling speakers expands it again automatically.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                androidx.compose.material3.Switch(checked = compress, onCheckedChange = { context.app.settings.setCompressAudio(it) })
+            }
+            val p = pending
+            if (p != null && p.first > 0) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = { com.lecturenotes.transcribe.Jobs.compressAll(context); started = true }, enabled = !started) {
+                    Text(
+                        if (started) "Compressing in the background…"
+                        else "Free up ~${formatBytes(p.second)} (${p.first} recording${if (p.first == 1) "" else "s"})",
+                    )
                 }
             }
         }

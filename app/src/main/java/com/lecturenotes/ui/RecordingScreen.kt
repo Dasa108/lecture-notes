@@ -254,7 +254,14 @@ class RecordingViewModel(application: Application, private val id: Long) : Andro
         Jobs.cancelProcessing(app, id)
         val rec = app.db.recordings().get(id) ?: return@launch
         app.db.segments().deleteFrom(id, 0)
-        app.db.recordings().update(rec.copy(transcribedMs = 0, progress = 0f, status = RecordingStatus.READY, error = null))
+        // Compressed audio goes back through the import path, which decodes it to a fresh WAV first.
+        val fresh = if (com.lecturenotes.audio.AudioCompressor.isCompressed(rec.audioPath)) {
+            rec.copy(sourcePath = rec.audioPath, audioPath = File(File(rec.audioPath).parentFile, "rec_${System.currentTimeMillis()}.wav").path)
+        } else {
+            rec
+        }
+        release()
+        app.db.recordings().update(fresh.copy(transcribedMs = 0, progress = 0f, status = RecordingStatus.READY, error = null))
         Jobs.process(app, id)
     }
 
@@ -323,6 +330,20 @@ fun RecordingScreen(
     val slides by vm.slides.collectAsState()
     var tabKey by rememberSaveable { mutableStateOf<String?>(null) }
     val context = LocalContext.current
+    // "Save as…" for notes: each format picks a file location, then writes to it.
+    fun saveTo(write: (java.io.OutputStream) -> Unit): (android.net.Uri?) -> Unit = { uri ->
+        if (uri != null) {
+            runCatching { context.contentResolver.openOutputStream(uri)?.use(write) }
+                .onSuccess { android.widget.Toast.makeText(context, "Saved", android.widget.Toast.LENGTH_SHORT).show() }
+                .onFailure { android.widget.Toast.makeText(context, "Couldn't save: ${it.message}", android.widget.Toast.LENGTH_LONG).show() }
+        }
+    }
+    val savePdf = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf"),
+        saveTo { out -> study?.let { com.lecturenotes.notes.NotesExport.pdf(it, out) } })
+    val saveMd = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown"),
+        saveTo { out -> study?.let { com.lecturenotes.notes.NotesExport.markdown(it, out) } })
+    val saveAnki = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain"),
+        saveTo { out -> study?.let { com.lecturenotes.notes.NotesExport.anki(it, rec?.title ?: it.title, out) } })
     val addSlides = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.addAttachment(uri) { msg -> android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show() }
     }
@@ -468,6 +489,14 @@ fun RecordingScreen(
                 attempts = attempts,
                 onStudyCards = { onStudyCards(recordingId) },
                 onQuiz = { onQuiz(recordingId) },
+                onExport = { kind ->
+                    val base = (rec?.title ?: "notes").replace(Regex("[\\/:*?\"<>|]"), "_")
+                    when (kind) {
+                        "pdf" -> savePdf.launch("$base.pdf")
+                        "md" -> saveMd.launch("$base.md")
+                        "anki" -> saveAnki.launch("$base - flashcards.txt")
+                    }
+                },
                 onShare = {
                     study?.let { n ->
                         context.startActivity(

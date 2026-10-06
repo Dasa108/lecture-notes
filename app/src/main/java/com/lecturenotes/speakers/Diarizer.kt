@@ -37,13 +37,20 @@ class Diarizer(context: Context, threads: Int) : AutoCloseable {
      * Speaker turns for a whole 16 kHz WAV, with global speaker ids.
      * [onProgress] gets 0..1; [isCancelled] is checked between pieces.
      */
-    fun run(wav: File, onProgress: (Float) -> Unit, isCancelled: () -> Boolean): List<Turn> {
+    fun run(
+        wav: File,
+        onProgress: (Float) -> Unit,
+        isCancelled: () -> Boolean,
+        /** Called before each piece; may block (e.g. to let a hot phone cool down). */
+        beforePiece: () -> Unit = {},
+    ): List<Turn> {
         val total = Wav.sampleCount(wav)
         val pieceSamples = PIECE_SEC * Wav.SAMPLE_RATE
         val linker = SpeakerLinker()
         val turns = mutableListOf<Turn>()
         var start = 0L
         while (start < total) {
+            beforePiece()
             if (isCancelled()) throw InterruptedException("Cancelled")
             // Fold a short remainder into the last piece rather than diarizing a few seconds alone.
             val end = if (total - start < pieceSamples + MIN_PIECE_SEC * Wav.SAMPLE_RATE) total else start + pieceSamples

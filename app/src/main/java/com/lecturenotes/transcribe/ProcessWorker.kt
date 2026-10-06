@@ -127,6 +127,13 @@ class ProcessWorker(context: Context, params: WorkerParameters) : CoroutineWorke
                     continue
                 }
                 if (done && chunkStart >= available) break
+                // Let a very hot phone cool down between chunks instead of throttling harder.
+                Thermal.waitWhileHot(
+                    applicationContext, isCancelled = { isStopped },
+                    onPause = { runBlocking { recordings.setNote(rec.id, Thermal.PAUSED_NOTE) } },
+                    onResume = { runBlocking { recordings.setNote(rec.id, null) } },
+                )
+                if (isStopped) return Result.retry()
                 val chunkEnd = ChunkPlanner.nextCut(file, chunkStart, available)
                 val totalMs = (if (done) Wav.samplesToMs(available) else estimatedMs)
                     .coerceAtLeast(Wav.samplesToMs(chunkEnd)).coerceAtLeast(1)
@@ -155,6 +162,13 @@ class ProcessWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         }
         recordings.setStatus(rec.id, RecordingStatus.TRANSCRIBED)
         recordings.setProgress(rec.id, 1f)
+        // Shrink the audio now that the transcript exists; failures just leave the WAV in place.
+        if (app.settings.compressAudio) {
+            recordings.get(rec.id)?.let { done ->
+                runCatching { com.lecturenotes.audio.AudioStorage.compress(applicationContext, done) }
+                    .onFailure { android.util.Log.w(TAG, "compression failed", it) }
+            }
+        }
         // Label speakers next (it queues behind any other heavy work).
         val final = recordings.get(rec.id)
         if (final != null && app.settings.autoSpeakers && final.durationMs >= com.lecturenotes.speakers.SpeakerWorker.AUTO_MIN_DURATION_MS) {

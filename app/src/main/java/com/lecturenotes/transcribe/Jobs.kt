@@ -5,7 +5,6 @@ import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.lecturenotes.app
@@ -21,7 +20,10 @@ object Jobs {
     fun process(context: Context, recordingId: Long) {
         val request = OneTimeWorkRequestBuilder<ProcessWorker>()
             .setInputData(workDataOf(ProcessWorker.KEY_RECORDING_ID to recordingId))
-            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            // Waits while the battery is low (~15%) unless charging.
+            .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(true).build())
+            // Not expedited: WorkManager rejects expedited work with a battery constraint, and the
+            // worker runs in the foreground (with a notification) anyway.
             .build()
         // KEEP: if this recording is already being processed, that run will finish the job.
         WorkManager.getInstance(context)
@@ -59,6 +61,7 @@ object Jobs {
         context.app.db.recordings().setSpeakerStatus(recordingId, com.lecturenotes.data.SpeakerStatus.QUEUED.name, null)
         val request = OneTimeWorkRequestBuilder<com.lecturenotes.speakers.SpeakerWorker>()
             .setInputData(workDataOf(com.lecturenotes.speakers.SpeakerWorker.KEY_RECORDING_ID to recordingId))
+            .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(true).build())
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(speakersName(recordingId), ExistingWorkPolicy.REPLACE, request)
     }
@@ -67,7 +70,15 @@ object Jobs {
         WorkManager.getInstance(context).cancelUniqueWork(speakersName(recordingId))
         val dao = context.app.db.recordings()
         val status = dao.get(recordingId)?.speakerStatus
-        if (status == "QUEUED" || status == "RUNNING") dao.setSpeakerStatus(recordingId, null, null)
+        if (status == "QUEUED" || status == "RUNNING" || status == "PAUSED") dao.setSpeakerStatus(recordingId, null, null)
+    }
+
+    /** Compresses all transcribed recordings still stored as WAV. */
+    fun compressAll(context: Context) {
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "compress-all", ExistingWorkPolicy.KEEP,
+            OneTimeWorkRequestBuilder<com.lecturenotes.audio.CompressWorker>().build(),
+        )
     }
 
     fun notesName(recordingId: Long) = "notes-$recordingId"

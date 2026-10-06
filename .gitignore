@@ -10,3 +10,5 @@ captures/
 *.bin
 *.gguf
 .claude/settings.local.json
+keystore.properties
+*.jks

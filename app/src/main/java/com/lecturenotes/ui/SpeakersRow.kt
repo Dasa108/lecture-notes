@@ -73,10 +73,13 @@ fun SpeakersRow(
     if (rec.status != RecordingStatus.TRANSCRIBED) return
     Column(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
         when (rec.speakerStatus) {
-            SpeakerStatus.QUEUED.name, SpeakerStatus.RUNNING.name -> {
+            SpeakerStatus.QUEUED.name, SpeakerStatus.RUNNING.name, SpeakerStatus.PAUSED.name -> {
                 Text(
-                    if (rec.speakerStatus == SpeakerStatus.QUEUED.name) "Speaker labelling is waiting…"
-                    else "Labelling speakers… ${((rec.speakerProgress ?: 0f) * 100).toInt()}%",
+                    when (rec.speakerStatus) {
+                        SpeakerStatus.QUEUED.name -> "Speaker labelling is waiting (also waits while battery is low unless charging)…"
+                        SpeakerStatus.PAUSED.name -> "Speaker labelling paused: letting the phone cool down…"
+                        else -> "Labelling speakers… ${((rec.speakerProgress ?: 0f) * 100).toInt()}%"
+                    },
                     style = MaterialTheme.typography.labelMedium,
                 )
                 LinearProgressIndicator(progress = { rec.speakerProgress ?: 0f }, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))

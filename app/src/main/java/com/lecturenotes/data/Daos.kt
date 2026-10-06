@@ -51,6 +51,13 @@ interface RecordingDao {
     @Query("UPDATE recordings SET speakerStatus = :status, speakerProgress = :progress WHERE id = :id")
     suspend fun setSpeakerStatus(id: Long, status: String?, progress: Float?)
 
+    /** A short note shown with the status while work runs (e.g. paused for heat); null clears it. */
+    @Query("UPDATE recordings SET error = :note WHERE id = :id")
+    suspend fun setNote(id: Long, note: String?)
+
+    @Query("UPDATE recordings SET audioPath = :path WHERE id = :id")
+    suspend fun setAudioPath(id: Long, path: String)
+
     @Query("UPDATE recordings SET title = :title WHERE id = :id")
     suspend fun rename(id: Long, title: String)
 
@@ -171,6 +178,15 @@ interface AttachmentDao {
     )
     suspend fun pagesFor(recordingId: Long): List<AttachmentPage>
 
+    /** Slide/page text matching [pattern] (a LIKE pattern), one row per page. */
+    @Query(
+        """SELECT a.recordingId AS recordingId, p.number AS number, p.text AS text FROM attachment_pages p
+           JOIN attachments a ON a.id = p.attachmentId
+           WHERE a.status = 'DONE' AND p.text LIKE :pattern ESCAPE '\'
+           ORDER BY a.createdAt, p.number""",
+    )
+    fun observeMatching(pattern: String): Flow<List<SlideMatch>>
+
     /** Pages of a lecture's finished attachments with their file info, numbered like [pagesFor]. */
     @Query(
         """SELECT p.*, a.kind AS kind, a.path AS path, a.fileName AS fileName FROM attachment_pages p
@@ -186,6 +202,12 @@ interface AttachmentDao {
     )
     fun observeTextPageCount(recordingId: Long): Flow<Int>
 }
+
+data class SlideMatch(
+    @ColumnInfo(name = "recordingId") val recordingId: Long,
+    @ColumnInfo(name = "number") val number: Int,
+    @ColumnInfo(name = "text") val text: String,
+)
 
 /** A page of an attachment plus what's needed to show it. */
 data class SlidePage(

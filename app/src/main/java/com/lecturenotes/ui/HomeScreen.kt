@@ -161,9 +161,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             combine(
                 app.db.segments().observeMatches(likePattern(q)),
                 app.db.notes().observeMatching(likePattern(q)),
-            ) { transcript, notes ->
-                val inTranscript = transcript.map { it.recordingId }.toSet()
-                transcript + notes.filter { it.recordingId !in inTranscript }.mapNotNull { notesMatch(it, q.trim()) }
+                app.db.attachments().observeMatching(likePattern(q)),
+            ) { transcript, notes, slides ->
+                // One hit per lecture: where it was said, else the notes, else the slides.
+                val seen = transcript.map { it.recordingId }.toMutableSet()
+                val fromNotes = notes.filter { it.recordingId !in seen }.mapNotNull { notesMatch(it, q.trim()) }
+                seen += fromNotes.map { it.recordingId }
+                val fromSlides = slides.filter { it.recordingId !in seen }.distinctBy { it.recordingId }.map { s ->
+                    val line = s.text.lines().firstOrNull { it.contains(q.trim(), ignoreCase = true) } ?: s.text
+                    TranscriptMatch(s.recordingId, 0, "Slides: ${line.trim()}")
+                }
+                transcript + fromNotes + fromSlides
             }
         }
     }
