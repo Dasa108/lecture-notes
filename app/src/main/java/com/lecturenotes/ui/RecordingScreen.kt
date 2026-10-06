@@ -120,6 +120,8 @@ class RecordingViewModel(application: Application, private val id: Long) : Andro
     fun cancelSpeakers() = viewModelScope.launch { Jobs.cancelSpeakers(app, id) }
     fun renameSpeaker(s: com.lecturenotes.data.Speaker, name: String) = viewModelScope.launch { app.db.speakers().rename(s.id, name) }
     fun setLecturer(s: com.lecturenotes.data.Speaker) = viewModelScope.launch { app.db.speakers().setLecturer(id, s.id) }
+    fun mergeSpeakers(from: com.lecturenotes.data.Speaker, into: com.lecturenotes.data.Speaker) =
+        viewModelScope.launch { com.lecturenotes.speakers.SpeakerEdits.merge(app.db, from, into) }
 
     val attachments = app.db.attachments().observeFor(id).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val slides = app.db.attachments().observeSlides(id).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -144,8 +146,14 @@ class RecordingViewModel(application: Application, private val id: Long) : Andro
     init {
         viewModelScope.launch {
             while (isActive) {
-                player?.let { if (it.isPlaying) _positionMs.value = it.currentPosition.toLong() }
-                delay(200)
+                player?.let {
+                    if (it.isPlaying) {
+                        _positionMs.value = it.currentPosition.toLong()
+                        // A voice sample stops at the end of its stretch.
+                        stopAtMs?.let { stop -> if (it.currentPosition >= stop) { it.pause(); _playing.value = false; stopAtMs = null } }
+                    }
+                }
+                delay(100)
             }
         }
     }
@@ -166,7 +174,21 @@ class RecordingViewModel(application: Application, private val id: Long) : Andro
         }
     }
 
+    /** End of the stretch being played as a voice sample, or null for normal playback. */
+    private var stopAtMs: Long? = null
+
+    /** Plays one stretch of the recording (a speaker's voice sample), then pauses. */
+    fun playSpan(startMs: Long, endMs: Long) {
+        val p = ensurePlayer() ?: return
+        p.seekTo(startMs.toInt())
+        _positionMs.value = startMs
+        stopAtMs = endMs
+        if (!p.isPlaying) p.start()
+        _playing.value = true
+    }
+
     fun togglePlay() {
+        stopAtMs = null
         val p = ensurePlayer() ?: return
         if (p.isPlaying) p.pause() else p.start()
         _playing.value = p.isPlaying
@@ -465,8 +487,13 @@ fun RecordingScreen(
         ) {
             item { StatusHeader(r, segments.isEmpty(), vm::transcribe, vm::cancel, onModels) }
             item {
-                SpeakersRow(r, speakers, onLabel = { vm.labelSpeakers() }, onCancel = { vm.cancelSpeakers() },
-                    onRename = { s, n -> vm.renameSpeaker(s, n) }, onSetLecturer = { vm.setLecturer(it) })
+                SpeakersRow(
+                    r, speakers, segments,
+                    onLabel = { vm.labelSpeakers() }, onCancel = { vm.cancelSpeakers() },
+                    onRename = { s, n -> vm.renameSpeaker(s, n) }, onSetLecturer = { vm.setLecturer(it) },
+                    onPlay = { a, b -> vm.playSpan(a, b) }, onStop = { vm.pause() },
+                    onMerge = { from, into -> vm.mergeSpeakers(from, into) },
+                )
             }
             val speakerById = speakers.associateBy { it.id }
             val showSpeakers = speakers.size > 1

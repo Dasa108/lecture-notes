@@ -120,6 +120,12 @@ interface SpeakerDao {
     @Query("UPDATE speakers SET name = :name WHERE id = :id")
     suspend fun rename(id: Long, name: String)
 
+    @Update
+    suspend fun update(s: Speaker)
+
+    @Query("DELETE FROM speakers WHERE id = :id")
+    suspend fun delete(id: Long)
+
     /** Marks one speaker as the lecturer (and no one else in that recording). */
     @Query("UPDATE speakers SET isLecturer = (id = :id) WHERE recordingId = :recordingId")
     suspend fun setLecturer(recordingId: Long, id: Long)
@@ -336,6 +342,9 @@ interface SegmentDao {
 
     @Query("UPDATE segments SET speakerId = :speakerId WHERE id = :id")
     suspend fun setSpeaker(id: Long, speakerId: Long?)
+
+    @Query("UPDATE segments SET speakerId = :into WHERE recordingId = :recordingId AND speakerId = :from")
+    suspend fun moveSpeaker(recordingId: Long, from: Long, into: Long)
 
     @Query("UPDATE segments SET speakerId = NULL WHERE recordingId = :recordingId")
     suspend fun clearSpeakers(recordingId: Long)

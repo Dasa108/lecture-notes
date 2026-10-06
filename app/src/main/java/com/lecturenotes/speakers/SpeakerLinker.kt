@@ -86,6 +86,20 @@ class SpeakerLinker(private val threshold: Float = DEFAULT_THRESHOLD) {
             }
         }
 
+        /** Joins back-to-back turns by the same speaker (e.g. split at a piece boundary). */
+        fun mergeAdjacent(turns: List<Turn>, gapMs: Long = 1_000): List<Turn> {
+            val out = mutableListOf<Turn>()
+            for (t in turns.sortedBy { it.startMs }) {
+                val last = out.lastOrNull()
+                if (last != null && last.speaker == t.speaker && t.startMs - last.endMs <= gapMs) {
+                    out[out.lastIndex] = last.copy(endMs = maxOf(last.endMs, t.endMs))
+                } else {
+                    out += t
+                }
+            }
+            return out
+        }
+
         /** Total talk time per global speaker. */
         fun talkTime(turns: List<Turn>): Map<Int, Long> =
             turns.groupBy { it.speaker }.mapValues { (_, ts) -> ts.sumOf { it.endMs - it.startMs } }

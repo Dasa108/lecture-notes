@@ -9,7 +9,9 @@ import kotlinx.coroutines.flow.asStateFlow
 /** Small app-wide preferences. */
 class AppSettings(context: Context) {
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
-    private val _autoSpeakers = MutableStateFlow(prefs.getBoolean(KEY_AUTO_SPEAKERS, true))
+    // Off by default: labelling an 80-minute lecture takes ~13 minutes of full CPU and heats the phone,
+    // and most lectures are one person talking.
+    private val _autoSpeakers = MutableStateFlow(prefs.getBoolean(KEY_AUTO_SPEAKERS, false))
 
     /** Label speakers automatically after transcribing recordings of 2+ minutes. */
     val autoSpeakersFlow: StateFlow<Boolean> = _autoSpeakers.asStateFlow()

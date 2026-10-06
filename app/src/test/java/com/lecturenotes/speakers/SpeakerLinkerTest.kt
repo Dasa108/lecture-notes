@@ -61,7 +61,7 @@ class SpeakerLinkerTest {
 
     @Test
     fun adjacentTurnsOfOneSpeakerMerge() {
-        val merged = Diarizer.mergeAdjacent(listOf(Turn(0, 5_000, 0), Turn(5_400, 9_000, 0), Turn(9_000, 12_000, 1)))
+        val merged = SpeakerLinker.mergeAdjacent(listOf(Turn(0, 5_000, 0), Turn(5_400, 9_000, 0), Turn(9_000, 12_000, 1)))
         assertEquals(listOf(Turn(0, 9_000, 0), Turn(9_000, 12_000, 1)), merged)
     }
 

@@ -65,7 +65,7 @@ class Diarizer(context: Context, threads: Int) : AutoCloseable {
             start = end
             onProgress(start.toFloat() / total)
         }
-        return mergeAdjacent(turns)
+        return SpeakerLinker.mergeAdjacent(turns)
     }
 
     /** One embedding for a speaker from up to [EMBED_SEC] of their longest turns in this piece. */
@@ -105,21 +105,12 @@ class Diarizer(context: Context, threads: Int) : AutoCloseable {
         const val PIECE_SEC = 600L
         private const val MIN_PIECE_SEC = 120L
         private const val EMBED_SEC = 30f
-        /** sherpa-onnx's recommended clustering threshold for pyannote + CAM++. */
-        private const val CLUSTER_THRESHOLD = 0.5f
-
-        /** Joins back-to-back turns by the same speaker (e.g. split at a piece boundary). */
-        fun mergeAdjacent(turns: List<Turn>, gapMs: Long = 1_000): List<Turn> {
-            val out = mutableListOf<Turn>()
-            for (t in turns.sortedBy { it.startMs }) {
-                val last = out.lastOrNull()
-                if (last != null && last.speaker == t.speaker && t.startMs - last.endMs <= gapMs) {
-                    out[out.lastIndex] = last.copy(endMs = maxOf(last.endMs, t.endMs))
-                } else {
-                    out += t
-                }
-            }
-            return out
-        }
+        /**
+         * How alike two stretches of voice must be to count as one speaker (higher merges more).
+         * sherpa-onnx's default of 0.5 split one lecturer into 8 "speakers" in 10 minutes of a real
+         * classroom recording (the voice changes with distance, facing the board, room echo); 0.9 gave
+         * 2 voices and stayed at 2 up to 1.2. Users can still merge leftovers by ear in the app.
+         */
+        private const val CLUSTER_THRESHOLD = 0.9f
     }
 }
