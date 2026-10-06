@@ -359,6 +359,9 @@ interface SegmentDao {
     @Query("UPDATE segments SET text = :text WHERE id = :id")
     suspend fun updateText(id: Long, text: String)
 
+    @androidx.room.Transaction
+    suspend fun updateTexts(changes: Map<Long, String>) = changes.forEach { (id, t) -> updateText(id, t) }
+
     @Query("SELECT * FROM segments WHERE recordingId = :recordingId ORDER BY startMs")
     suspend fun getFor(recordingId: Long): List<Segment>
 

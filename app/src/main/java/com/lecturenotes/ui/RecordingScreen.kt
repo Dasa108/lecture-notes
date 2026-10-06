@@ -266,6 +266,13 @@ class RecordingViewModel(application: Application, private val id: Long) : Andro
 
     fun rename(title: String) = viewModelScope.launch { app.db.recordings().rename(id, title.trim()) }
 
+    /** Replaces text across the whole transcript; returns how many lines changed. */
+    fun replaceAll(regex: Regex, replacement: String, onDone: (Int) -> Unit) = viewModelScope.launch {
+        val changes = com.lecturenotes.transcribe.TranscriptReplace.apply(segments.value.associate { it.id to it.text }, regex, replacement)
+        app.db.segments().updateTexts(changes)
+        onDone(changes.size)
+    }
+
     fun editSegment(segment: Segment, text: String) =
         viewModelScope.launch { app.db.segments().updateText(segment.id, text.trim()) }
 
@@ -377,6 +384,7 @@ fun RecordingScreen(
     var renaming by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Segment?>(null) }
+    var replacing by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) { onDispose { vm.pause() } }
 
@@ -397,6 +405,11 @@ fun RecordingScreen(
                     IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, "More") }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         DropdownMenuItem(text = { Text("Rename") }, onClick = { menuOpen = false; renaming = true })
+                        DropdownMenuItem(
+                            text = { Text("Find and replace") },
+                            enabled = segments.isNotEmpty(),
+                            onClick = { menuOpen = false; replacing = true },
+                        )
                         DropdownMenuItem(
                             text = { Text("Transcribe again") },
                             enabled = rec?.let {
@@ -595,6 +608,22 @@ fun RecordingScreen(
             onMerge = { into -> vm.mergeSpeakers(s, into); vm.pause(); editingSpeakerId = null },
         )
     }
+    if (replacing) {
+        FindReplaceDialog(
+            lines = segments.map { it.text },
+            onDismiss = { replacing = false },
+            onReplace = { regex, replacement ->
+                replacing = false
+                vm.replaceAll(regex, replacement) { n ->
+                    android.widget.Toast.makeText(
+                        context,
+                        "Changed $n line${if (n == 1) "" else "s"}." + if (study != null) " Make new notes to use the corrected transcript." else "",
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                }
+            },
+        )
+    }
     if (pickingSubject) {
         SubjectPickerSheet(
             title = "File this lecture under…",
@@ -649,6 +678,13 @@ private fun StatusHeader(
             Spacer(Modifier.height(8.dp))
         }
         if (rec.status != RecordingStatus.TRANSCRIBED) StatusWithProgress(rec)
+        if (rec.status == RecordingStatus.TRANSCRIBED && !noSegments) {
+            Text(
+                "Long-press any line to edit it, or use ⋮ → Find and replace to fix a word everywhere.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (rec.isBusy) {
             // Many phones confine background apps to their slower cores; while this page is
             // open the app gets all of them, so keep the screen on.
@@ -758,6 +794,43 @@ private fun PlayerBar(positionMs: Long, durationMs: Long, playing: Boolean, onTo
             }
         }
     }
+}
+
+@Composable
+private fun FindReplaceDialog(lines: List<String>, onDismiss: () -> Unit, onReplace: (Regex, String) -> Unit) {
+    var find by remember { mutableStateOf("") }
+    var replace by remember { mutableStateOf("") }
+    var wholeWord by remember { mutableStateOf(true) }
+    var matchCase by remember { mutableStateOf(false) }
+    val regex = com.lecturenotes.transcribe.TranscriptReplace.pattern(find, wholeWord, matchCase)
+    val (matches, hitLines) = regex?.let { com.lecturenotes.transcribe.TranscriptReplace.count(lines, it) } ?: (0 to 0)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Find and replace") },
+        text = {
+            Column {
+                OutlinedTextField(find, { find = it }, label = { Text("Find") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(replace, { replace = it }, label = { Text("Replace with") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(checked = wholeWord, onCheckedChange = { wholeWord = it })
+                    Text("Whole word")
+                    Spacer(Modifier.width(12.dp))
+                    androidx.compose.material3.Checkbox(checked = matchCase, onCheckedChange = { matchCase = it })
+                    Text("Match case")
+                }
+                Text(
+                    if (regex == null) "Fix a word speech recognition got wrong everywhere it appears."
+                    else "$matches match${if (matches == 1) "" else "es"} in $hitLines line${if (hitLines == 1) "" else "s"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = regex != null && matches > 0, onClick = { regex?.let { onReplace(it, replace) } }) { Text("Replace all") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable
