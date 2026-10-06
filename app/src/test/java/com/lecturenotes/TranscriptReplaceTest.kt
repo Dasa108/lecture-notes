@@ -26,3 +26,14 @@ class TranscriptReplaceTest {
         assertNull(TranscriptReplace.pattern("  ", true, false))
     }
 }
+
+class SpeakerTagTest {
+    private fun sp(name: String, lecturer: Boolean) = com.lecturenotes.data.Speaker(1, 1, 1, name, lecturer, 0)
+
+    @Test fun lecturerIsAlwaysNamedAsSuch() {
+        assertEquals("Lecturer", com.lecturenotes.notes.speakerTag(sp("Speaker 1", true)))
+        assertEquals("Dr Rao, lecturer", com.lecturenotes.notes.speakerTag(sp("Dr Rao", true)))
+        assertEquals("Lecturer", com.lecturenotes.notes.speakerTag(sp("Lecturer", true)))
+        assertEquals("Speaker 2", com.lecturenotes.notes.speakerTag(sp("Speaker 2", false)))
+    }
+}

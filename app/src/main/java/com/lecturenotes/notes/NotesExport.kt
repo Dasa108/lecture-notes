@@ -19,12 +19,14 @@ object NotesExport {
      */
     fun anki(notes: StudyNotes, deck: String, out: OutputStream) {
         fun clean(s: String) = s.replace('\t', ' ').replace('\n', ' ').trim()
+        // Anki reads the file as CSV: quote every field so quote marks and a leading "#" survive.
+        fun field(s: String) = "\"" + clean(s).replace("\"", "\"\"") + "\""
         val text = buildString {
             appendLine("#separator:tab")
             appendLine("#html:false")
             appendLine("#notetype:Basic")
             appendLine("#deck:${clean(deck)}")
-            notes.flashcards.forEach { appendLine("${clean(it.front)}\t${clean(it.back)}") }
+            notes.flashcards.forEach { appendLine("${field(it.front)}\t${field(it.back)}") }
         }
         out.write(text.toByteArray(Charsets.UTF_8))
     }

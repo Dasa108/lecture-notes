@@ -34,7 +34,7 @@ class NotesWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
         val labelled = speakers.size > 1
         var lastSpeaker: Long? = null
         val transcript = app.db.segments().getFor(recordingId).map { seg ->
-            val tag = if (labelled && seg.speakerId != null && seg.speakerId != lastSpeaker) speakers[seg.speakerId]?.name else null
+            val tag = if (labelled && seg.speakerId != null && seg.speakerId != lastSpeaker) speakers[seg.speakerId]?.let(::speakerTag) else null
             if (seg.speakerId != null) lastSpeaker = seg.speakerId
             TranscriptLine(seg.startMs, if (tag != null) "($tag) ${seg.text}" else seg.text)
         }
@@ -117,4 +117,12 @@ class NotesWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
         return ForegroundInfo(NOTIFICATION_BASE + recordingId.toInt(), notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
     }
 
+}
+
+/** The AI only sees the label, so the lecturer must say so whatever the user named them. */
+internal fun speakerTag(s: com.lecturenotes.data.Speaker): String = when {
+    !s.isLecturer -> s.name
+    s.name.contains("lecturer", ignoreCase = true) -> s.name
+    Regex("""Speaker \d+""").matches(s.name) -> "Lecturer"
+    else -> "${s.name}, lecturer"
 }
