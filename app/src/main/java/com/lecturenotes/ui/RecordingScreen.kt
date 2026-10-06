@@ -176,6 +176,13 @@ class RecordingViewModel(application: Application, private val id: Long) : Andro
 
     /** End of the stretch being played as a voice sample, or null for normal playback. */
     private var stopAtMs: Long? = null
+        set(value) {
+            field = value
+            _sampling.value = value != null
+        }
+    private val _sampling = MutableStateFlow(false)
+    /** True while a speaker's voice sample is playing. */
+    val sampling = _sampling.asStateFlow()
 
     /** Plays one stretch of the recording (a speaker's voice sample), then pauses. */
     fun playSpan(startMs: Long, endMs: Long) {
@@ -311,6 +318,8 @@ fun RecordingScreen(
     val attempts by vm.attempts.collectAsState()
     val attachments by vm.attachments.collectAsState()
     val speakers by vm.speakers.collectAsState()
+    val sampling by vm.sampling.collectAsState()
+    var editingSpeakerId by rememberSaveable { mutableStateOf<Long?>(null) }
     val slides by vm.slides.collectAsState()
     var tabKey by rememberSaveable { mutableStateOf<String?>(null) }
     val context = LocalContext.current
@@ -391,7 +400,8 @@ fun RecordingScreen(
         }
         // Keep the line being played in view.
         LaunchedEffect(activeIndex, playing) {
-            if (tab == TAB_TRANSCRIPT && playing && activeIndex >= 0) listState.animateScrollToItem(activeIndex + HEADER_ITEMS)
+            // Not while playing a speaker's voice sample: that would scroll the speakers row away.
+            if (tab == TAB_TRANSCRIPT && playing && !sampling && activeIndex >= 0) listState.animateScrollToItem(activeIndex + HEADER_ITEMS)
         }
 
         Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
@@ -490,9 +500,7 @@ fun RecordingScreen(
                 SpeakersRow(
                     r, speakers, segments,
                     onLabel = { vm.labelSpeakers() }, onCancel = { vm.cancelSpeakers() },
-                    onRename = { s, n -> vm.renameSpeaker(s, n) }, onSetLecturer = { vm.setLecturer(it) },
-                    onPlay = { a, b -> vm.playSpan(a, b) }, onStop = { vm.pause() },
-                    onMerge = { from, into -> vm.mergeSpeakers(from, into) },
+                    onEdit = { editingSpeakerId = it.id },
                 )
             }
             val speakerById = speakers.associateBy { it.id }
@@ -513,6 +521,21 @@ fun RecordingScreen(
         }
     }
 
+    speakers.firstOrNull { it.id == editingSpeakerId }?.let { s ->
+        SpeakerDialog(
+            speaker = s,
+            others = speakers.filter { it.id != s.id },
+            samples = samplesFor(s, segments),
+            onPlay = { a, b -> vm.playSpan(a, b) },
+            onDismiss = { vm.pause(); editingSpeakerId = null },
+            onSave = { name, lecturer ->
+                if (name != s.name) vm.renameSpeaker(s, name)
+                if (lecturer && !s.isLecturer) vm.setLecturer(s)
+                vm.pause(); editingSpeakerId = null
+            },
+            onMerge = { into -> vm.mergeSpeakers(s, into); vm.pause(); editingSpeakerId = null },
+        )
+    }
     if (pickingSubject) {
         SubjectPickerSheet(
             title = "File this lecture under…",

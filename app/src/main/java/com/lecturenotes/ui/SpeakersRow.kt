@@ -50,7 +50,7 @@ import com.lecturenotes.data.SpeakerStatus
 fun speakerColor(number: Int) = subjectColor(number - 1)
 
 /** Up to [n] clear stretches of a speaker's voice (their longest lines, at most 8 s each). */
-private fun samplesFor(speaker: Speaker, segments: List<Segment>, n: Int = 5): List<Pair<Long, Long>> =
+fun samplesFor(speaker: Speaker, segments: List<Segment>, n: Int = 5): List<Pair<Long, Long>> =
     segments.filter { it.speakerId == speaker.id && it.endMs - it.startMs >= 2_000 }
         .sortedByDescending { it.endMs - it.startMs }
         .take(n)
@@ -67,14 +67,10 @@ fun SpeakersRow(
     segments: List<Segment>,
     onLabel: () -> Unit,
     onCancel: () -> Unit,
-    onRename: (Speaker, String) -> Unit,
-    onSetLecturer: (Speaker) -> Unit,
-    onPlay: (Long, Long) -> Unit,
-    onStop: () -> Unit,
-    onMerge: (from: Speaker, into: Speaker) -> Unit,
+    /** Opens the speaker panel. It lives outside the scrolling list so playback can't close it. */
+    onEdit: (Speaker) -> Unit,
 ) {
     if (rec.status != RecordingStatus.TRANSCRIBED) return
-    var editing by remember { mutableStateOf<Speaker?>(null) }
     Column(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
         when (rec.speakerStatus) {
             SpeakerStatus.QUEUED.name, SpeakerStatus.RUNNING.name -> {
@@ -100,7 +96,7 @@ fun SpeakersRow(
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         speakers.forEach { s ->
                             AssistChip(
-                                onClick = { editing = s },
+                                onClick = { onEdit(s) },
                                 leadingIcon = {
                                     if (s.isLecturer) Icon(Icons.Filled.Star, "Lecturer", Modifier.size(16.dp), tint = speakerColor(s.number))
                                     else SubjectDot(s.number - 1)
@@ -142,25 +138,10 @@ fun SpeakersRow(
         }
     }
 
-    editing?.let { s ->
-        SpeakerDialog(
-            speaker = s,
-            others = speakers.filter { it.id != s.id },
-            samples = samplesFor(s, segments),
-            onPlay = onPlay,
-            onDismiss = { onStop(); editing = null },
-            onSave = { name, lecturer ->
-                if (name != s.name) onRename(s, name)
-                if (lecturer && !s.isLecturer) onSetLecturer(s)
-                onStop(); editing = null
-            },
-            onMerge = { into -> onMerge(s, into); onStop(); editing = null },
-        )
-    }
 }
 
 @Composable
-private fun SpeakerDialog(
+fun SpeakerDialog(
     speaker: Speaker,
     others: List<Speaker>,
     samples: List<Pair<Long, Long>>,
