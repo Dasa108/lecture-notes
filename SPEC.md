@@ -53,7 +53,9 @@ An Android app that records or imports audio, transcribes it on the device with 
 ### 4.3 Recommendation rule
 1. Keep only models that fit in RAM and in under 50% of free storage.
 2. With a speed test: estimate minutes per hour of lecture = (Tiny encode × encode ratio + Tiny decode × decode ratio) × 120 windows.
-3. Recommend the **most accurate model that does a 1-hour lecture in ≤ 20 minutes with the app open**. Without a speed test, use a memory-based guess that never picks Medium.
+3. Recommend the **most accurate model that does a 1-hour lecture in ≤ 20 minutes with the app open** (or the fastest one that fits, with a "this phone is slow" note). Without a speed test, use a memory-based guess that never picks Medium.
+   - The speed test **runs automatically on the first visit** to Speech models (once per install; leaving the screen mid-test lets it retry next time). It can be re-run by hand.
+   - **When no model fits** (under ~1.5 GB RAM reported, or less free storage than twice Tiny's size), nothing is recommended; the screen explains why (RAM, or how many MB to free) and notes that notes from slides and PDFs still work.
 4. The Models screen shows "1-hour lecture ≈ N min with the app open" for each model, and a note that some phones (e.g. vivo) limit background apps to slow cores (measured 2–3× slower).
 
 ### 4.4 Local LLM recommendation (for notes)

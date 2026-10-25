@@ -1,6 +1,7 @@
 package com.lecturenotes.whisper
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -28,25 +29,45 @@ class RecommendTest {
 
     @Test
     fun fastPhoneGetsSmallNotMedium() {
-        assertEquals("small.en-q5_1", WhisperModels.recommend(phone(7.5), fastPhone).id)
+        assertEquals("small.en-q5_1", WhisperModels.recommend(phone(7.5), fastPhone)?.id)
     }
 
     @Test
     fun slowPhoneGetsAFasterModel() {
-        assertEquals("base.en-q5_1", WhisperModels.recommend(phone(7.5), slowPhone).id)
+        assertEquals("base.en-q5_1", WhisperModels.recommend(phone(7.5), slowPhone)?.id)
     }
 
     @Test
     fun memoryLimitsTheChoice() {
         // 3 GB phone: Small/Medium don't fit even if fast enough.
-        assertEquals("base.en-q5_1", WhisperModels.recommend(phone(3.0), fastPhone).id)
+        assertEquals("base.en-q5_1", WhisperModels.recommend(phone(3.0), fastPhone)?.id)
         // Nearly-full storage: only Tiny fits.
-        assertEquals("tiny.en-q5_1", WhisperModels.recommend(phone(8.0, freeGb = 0.1), fastPhone).id)
+        assertEquals("tiny.en-q5_1", WhisperModels.recommend(phone(8.0, freeGb = 0.1), fastPhone)?.id)
     }
 
     @Test
     fun withoutABenchmarkNeverRecommendsMedium() {
-        assertEquals("small.en-q5_1", WhisperModels.recommend(phone(12.0), null).id)
+        assertEquals("small.en-q5_1", WhisperModels.recommend(phone(12.0), null)?.id)
+    }
+
+    @Test
+    fun phonesThatCantRunAnyModelGetAReasonNotARecommendation() {
+        val tinyRam = phone(1.2)
+        assertNull(WhisperModels.recommend(tinyRam, fastPhone))
+        assertNull(WhisperModels.recommend(tinyRam, null))
+        assertTrue(WhisperModels.unsupportedReason(tinyRam)!!.contains("2 GB of RAM"))
+
+        val fullStorage = phone(8.0, freeGb = 0.03) // ~31 MB free; Tiny needs ~64 MB
+        assertNull(WhisperModels.recommend(fullStorage, null))
+        assertTrue(WhisperModels.unsupportedReason(fullStorage)!!.startsWith("Not enough free storage"))
+
+        assertNull(WhisperModels.unsupportedReason(phone(4.0)))
+    }
+
+    @Test
+    fun aVerySlowPhoneStillGetsTheFastestModelThatFits() {
+        val verySlow = BenchResult(encodeMs = 20_000.0, decodeMs = 0.0, threads = 2, measuredAt = 0)
+        assertEquals("tiny.en-q5_1", WhisperModels.recommend(phone(8.0), verySlow)?.id)
     }
 
     @Test

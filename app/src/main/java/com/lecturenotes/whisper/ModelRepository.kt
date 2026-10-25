@@ -49,6 +49,11 @@ class ModelRepository(private val context: Context) {
         _bench.value = result
     }
 
+    /** Whether the automatic first-visit speed test has already run (successfully or not). */
+    var autoCheckDone: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_CHECK, false)
+        set(value) = prefs.edit { putBoolean(KEY_AUTO_CHECK, value) }
+
     fun notifyChanged() {
         _changes.value++
     }
@@ -56,5 +61,6 @@ class ModelRepository(private val context: Context) {
     private companion object {
         const val KEY_SELECTED = "selected_model"
         const val KEY_BENCH = "bench"
+        const val KEY_AUTO_CHECK = "auto_check_done"
     }
 }

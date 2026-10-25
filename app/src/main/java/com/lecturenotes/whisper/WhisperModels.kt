@@ -48,12 +48,26 @@ object WhisperModels {
 
     /**
      * With a benchmark: the most accurate model that transcribes a 1-hour lecture in at most
-     * [TARGET_MINUTES_PER_HOUR] with the app open. Without one: a memory-based guess (never Medium).
+     * [TARGET_MINUTES_PER_HOUR] with the app open, or the fastest one if none is that quick.
+     * Without one: a memory-based guess (never Medium). Null when no model fits this phone.
      */
-    fun recommend(device: DeviceInfo, bench: BenchResult? = null): WhisperModel {
-        val fits = fitting(device)
-        if (bench == null) return fits.filter { it.id != "medium.en-q5_0" }.lastOrNull() ?: all.first()
-        return fits.lastOrNull { bench.minutesPerHour(it) <= TARGET_MINUTES_PER_HOUR } ?: all.first()
+    fun recommend(device: DeviceInfo, bench: BenchResult? = null): WhisperModel? {
+        val fits = fitting(device).ifEmpty { return null }
+        if (bench == null) return fits.lastOrNull { it.id != "medium.en-q5_0" } ?: fits.first()
+        return fits.lastOrNull { bench.minutesPerHour(it) <= TARGET_MINUTES_PER_HOUR } ?: fits.first()
+    }
+
+    /** Why no model can run on this phone, or null if at least one fits. */
+    fun unsupportedReason(device: DeviceInfo): String? {
+        if (fitting(device).isNotEmpty()) return null
+        val smallest = all.first()
+        return if (device.totalRamGb + 0.5 < smallest.minRamGb) {
+            "On-device transcription needs at least %.0f GB of RAM, and this phone has %.1f GB."
+                .format(smallest.minRamGb, device.totalRamGb)
+        } else {
+            val neededMb = (smallest.sizeBytes * 2 - device.freeStorageBytes) / 1_048_576 + 1
+            "Not enough free storage: free up at least $neededMb MB to download the smallest speech model."
+        }
     }
 
     /** A 1-hour lecture should be ready in about 20 minutes with the app open. */

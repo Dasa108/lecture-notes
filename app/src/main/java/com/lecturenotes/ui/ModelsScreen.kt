@@ -86,15 +86,29 @@ class ModelsViewModel(application: Application) : AndroidViewModel(application) 
     private val repo = app.models
     val device = DeviceInfo.read(application)
     val bench = repo.bench
+    /** Why this phone can't run any model, or null. */
+    val unsupported = WhisperModels.unsupportedReason(device)
     private val _check = MutableStateFlow<CheckState>(CheckState.Idle)
     val check = _check.asStateFlow()
+
+    init {
+        // A memory-only guess can be far off on a slow phone, so measure on the first visit.
+        if (unsupported == null && repo.bench.value == null && !repo.autoCheckDone) runCheck()
+    }
 
     /** Runs the speed test; the recommendation and per-model estimates update when it finishes. */
     fun runCheck() = viewModelScope.launch {
         if (_check.value is CheckState.Running) return@launch
         _check.value = CheckState.Running("Starting…")
-        _check.value = runCatching { DeviceCheck.run(app) { _check.value = CheckState.Running(it) } }
-            .fold({ CheckState.Idle }, { CheckState.Failed(it.message ?: "The speed test failed.") })
+        _check.value = try {
+            DeviceCheck.run(app) { _check.value = CheckState.Running(it) }
+            CheckState.Idle
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e // left the screen: try again on the next visit
+        } catch (e: Exception) {
+            CheckState.Failed(e.message ?: "The speed test failed.")
+        }
+        repo.autoCheckDone = true
     }
 
     private val workStates = combine(
@@ -157,7 +171,7 @@ fun ModelsScreen(onBack: () -> Unit, vm: ModelsViewModel = viewModel()) {
             item {
                 val bench by vm.bench.collectAsState()
                 val check by vm.check.collectAsState()
-                DeviceCard(vm.device, rows.firstOrNull { it.recommended }?.model, bench, check, vm::runCheck)
+                DeviceCard(vm.device, vm.unsupported, rows.firstOrNull { it.recommended }?.model, bench, check, vm::runCheck)
             }
             items(rows, key = { it.model.id }) { row ->
                 ModelCard(row, vm::download, vm::cancel, vm::select, vm::delete)
@@ -177,7 +191,14 @@ fun ModelsScreen(onBack: () -> Unit, vm: ModelsViewModel = viewModel()) {
 }
 
 @Composable
-private fun DeviceCard(device: DeviceInfo, recommended: WhisperModel?, bench: BenchResult?, check: CheckState, onCheck: () -> Unit) {
+private fun DeviceCard(
+    device: DeviceInfo,
+    unsupported: String?,
+    recommended: WhisperModel?,
+    bench: BenchResult?,
+    check: CheckState,
+    onCheck: () -> Unit,
+) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
         Column(Modifier.padding(16.dp)) {
             Text("Your phone", style = MaterialTheme.typography.titleMedium)
@@ -189,8 +210,26 @@ private fun DeviceCard(device: DeviceInfo, recommended: WhisperModel?, bench: Be
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(8.dp))
+            if (unsupported != null) {
+                Text("This phone can't transcribe on-device", style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.error)
+                Text(
+                    "$unsupported You can still make study notes from slides and PDFs.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                return@Column
+            }
             if (recommended != null) {
                 Text("Recommended: ${recommended.displayName}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+            }
+            val slowest = recommended?.let { bench?.minutesPerHour(it) }
+            if (slowest != null && slowest > WhisperModels.TARGET_MINUTES_PER_HOUR) {
+                Text(
+                    "This phone is slow for transcription: even ${recommended.displayName} takes about " +
+                        "${formatMinutes(slowest)} per lecture hour with the app open.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
             Text(
                 if (bench == null) "Based on memory only. Run the speed test for a recommendation that fits this phone."
@@ -240,9 +279,13 @@ private fun ModelCard(
                         }
                     }
                     Text(m.description, style = MaterialTheme.typography.bodySmall)
-                    row.minutesPerHour?.let { min ->
+                    val notes = listOfNotNull(
+                        row.minutesPerHour?.let { "1-hour lecture ≈ ${formatMinutes(it)} with the app open" },
+                        if (!row.fits) "too big for this phone's memory or free storage" else null,
+                    )
+                    if (notes.isNotEmpty()) {
                         Text(
-                            "1-hour lecture ≈ ${formatMinutes(min)} with the app open" + if (!row.fits) " · needs more memory than this phone has" else "",
+                            notes.joinToString(" · "),
                             style = MaterialTheme.typography.labelMedium,
                             color = if (row.fits) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                         )
