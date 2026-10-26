@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lecture Notes · Android app</title>
+<meta name="description" content="Record a lecture, transcribe it on your phone with Whisper, and turn it into study notes, flashcards and a quiz.">
+<meta property="og:title" content="Lecture Notes">
+<meta property="og:description" content="Record a lecture, transcribe it on your phone, and turn it into study notes, flashcards and a quiz.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23c2410c'/%3E%3Cpath d='M9 9h14M9 15h14M9 21h9' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #faf7f2;
+    --surface: #ffffff;
+    --surface-2: #f3eee6;
+    --text: #1c1917;
+    --muted: #57534e;
+    --faint: #a8a29e;
+    --line: #e7e0d6;
+    --accent: #c2410c;
+    --accent-ink: #ffffff;
+    --accent-soft: #ffedd5;
+    --s1: #2563eb;
+    --s2: #0f766e;
+    --shadow: 0 1px 2px rgba(28,25,23,.05), 0 12px 32px -12px rgba(28,25,23,.18);
+    --radius: 14px;
+    --max: 1080px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141210;
+      --surface: #1d1a17;
+      --surface-2: #26221e;
+      --text: #f5f0e8;
+      --muted: #b8afa4;
+      --faint: #786f65;
+      --line: #332e28;
+      --accent: #fb923c;
+      --accent-ink: #1c1917;
+      --accent-soft: #3a2414;
+      --s1: #60a5fa;
+      --s2: #2dd4bf;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 16px 40px -12px rgba(0,0,0,.6);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.6 Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); }
+  .wrap { max-width: var(--max); margin: 0 auto; padding: 0 20px; }
+  h1, h2, h3 { font-family: Fraunces, Georgia, serif; line-height: 1.15; margin: 0; letter-spacing: -.01em; }
+  h2 { font-size: clamp(1.7rem, 3.5vw, 2.3rem); }
+  h3 { font-size: 1.15rem; }
+  code, .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .88em; }
+
+  /* nav */
+  nav { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--text); text-decoration: none; }
+  .logo { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); display: grid; place-items: center; }
+  .logo svg { width: 16px; height: 16px; }
+  nav ul { display: flex; gap: 22px; list-style: none; margin: 0; padding: 0; font-size: .93rem; }
+  nav ul a { color: var(--muted); text-decoration: none; }
+  nav ul a:hover { color: var(--text); }
+  @media (max-width: 720px) { nav ul { display: none; } }
+
+  .btn { display: inline-flex; align-items: center; gap: 10px; padding: 13px 22px; border-radius: 999px; font-weight: 600; text-decoration: none; border: 1px solid transparent; transition: transform .15s, box-shadow .15s; }
+  .btn svg { width: 18px; height: 18px; flex: none; }
+  .btn-primary { background: var(--accent); color: var(--accent-ink); box-shadow: 0 8px 24px -10px var(--accent); }
+  .btn-primary:hover { transform: translateY(-1px); }
+  .btn-ghost { color: var(--text); border-color: var(--line); background: var(--surface); }
+  .btn-sm { padding: 8px 16px; font-size: .9rem; }
+
+  /* hero */
+  .hero { padding: 72px 0 56px; }
+  .hero .wrap { display: grid; grid-template-columns: 1.1fr .9fr; gap: 56px; align-items: center; }
+  .eyebrow { display: inline-block; font-size: .8rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin-bottom: 18px; }
+  .hero h1 { font-size: clamp(2.4rem, 5.5vw, 3.8rem); }
+  .hero h1 em { font-style: italic; color: var(--accent); }
+  .lede { font-size: 1.15rem; color: var(--muted); margin: 22px 0 32px; max-width: 34em; }
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; }
+  .meta { margin-top: 18px; font-size: .88rem; color: var(--faint); }
+  @media (max-width: 860px) { .hero .wrap { grid-template-columns: 1fr; gap: 44px; } .hero { padding-top: 48px; } }
+
+  /* phone mock */
+  .phone { width: min(320px, 100%); margin: 0 auto; background: var(--surface); border: 1px solid var(--line); border-radius: 34px; padding: 14px; box-shadow: var(--shadow); }
+  .screen { background: var(--bg); border-radius: 24px; overflow: hidden; border: 1px solid var(--line); }
+  .bar { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; }
+  .bar b { font-size: .95rem; }
+  .chip { font-size: .7rem; padding: 3px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .tabs { display: flex; gap: 18px; padding: 0 16px; font-size: .78rem; color: var(--faint); border-bottom: 1px solid var(--line); }
+  .tabs span { padding-bottom: 8px; }
+  .tabs .on { color: var(--text); border-bottom: 2px solid var(--accent); font-weight: 600; }
+  .line { padding: 10px 16px; font-size: .8rem; line-height: 1.5; border-bottom: 1px solid var(--line); }
+  .line:last-child { border-bottom: 0; }
+  .who { display: flex; gap: 8px; align-items: baseline; font-size: .72rem; font-weight: 600; margin-bottom: 2px; }
+  .who .t { color: var(--faint); font-family: "JetBrains Mono", monospace; font-weight: 400; }
+  .lec { color: var(--s1); } .stu { color: var(--s2); }
+  .player { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: var(--surface-2); }
+  .play { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; flex: none; }
+  .play svg { width: 10px; height: 10px; }
+  .track { flex: 1; height: 4px; background: var(--line); border-radius: 2px; position: relative; }
+  .track::after { content: ""; position: absolute; inset: 0 62% 0 0; background: var(--accent); border-radius: 2px; }
+
+  section { padding: 72px 0; }
+  .section-head { max-width: 40em; margin-bottom: 40px; }
+  .section-head p { color: var(--muted); margin: 12px 0 0; font-size: 1.05rem; }
+  .alt { background: var(--surface-2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+
+  /* steps */
+  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; counter-reset: step; }
+  .step { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; position: relative; }
+  .step::before { counter-increment: step; content: counter(step); font-family: Fraunces, serif; font-size: 2rem; font-weight: 700; color: var(--accent); display: block; margin-bottom: 8px; line-height: 1; }
+  .step p { color: var(--muted); font-size: .93rem; margin: 8px 0 0; }
+  .step .where { display: inline-block; margin-top: 12px; font-size: .74rem; font-weight: 600; color: var(--muted); background: var(--surface-2); padding: 3px 9px; border-radius: 999px; }
+  @media (max-width: 860px) { .steps { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 520px) { .steps { grid-template-columns: 1fr; } }
+
+  /* features */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; }
+  .card .ic { width: 38px; height: 38px; border-radius: 10px; background: var(--accent-soft); display: grid; place-items: center; margin-bottom: 14px; }
+  .card .ic svg { width: 20px; height: 20px; stroke: var(--accent); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .card p { color: var(--muted); font-size: .93rem; margin: 8px 0 0; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+
+  /* models table */
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+  @media (max-width: 860px) { .split { grid-template-columns: 1fr; } }
+  .tbl-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+  table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+  th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
+  td.num { font-variant-numeric: tabular-nums; }
+  .rec { color: var(--accent); font-weight: 600; font-size: .75rem; margin-left: 6px; }
+  .bars { display: grid; gap: 4px; }
+  .speed { display: block; height: 6px; border-radius: 3px; background: var(--accent); opacity: .75; }
+  .note { font-size: .85rem; color: var(--faint); margin-top: 12px; }
+  ul.ticks { list-style: none; padding: 0; margin: 20px 0 0; display: grid; gap: 12px; }
+  ul.ticks li { padding-left: 28px; position: relative; color: var(--muted); }
+  ul.ticks li::before { content: ""; position: absolute; left: 0; top: 6px; width: 16px; height: 16px; border-radius: 50%; background: var(--accent-soft); box-shadow: inset 0 0 0 5px var(--accent); }
+  ul.ticks b { color: var(--text); font-weight: 600; }
+
+  /* download */
+  .download { background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 40px; box-shadow: var(--shadow); display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+  @media (max-width: 860px) { .download { grid-template-columns: 1fr; padding: 28px 22px; } }
+  .download ol { margin: 16px 0 0; padding-left: 20px; color: var(--muted); }
+  .download ol li { margin-bottom: 8px; }
+  .facts { display: grid; grid-template-columns: auto 1fr; gap: 8px 18px; margin: 22px 0 0; font-size: .9rem; }
+  .facts dt { color: var(--faint); }
+  .facts dd { margin: 0; overflow-wrap: anywhere; }
+  .hash { font-family: "JetBrains Mono", monospace; font-size: .75rem; color: var(--muted); }
+
+  /* faq */
+  details { border-bottom: 1px solid var(--line); padding: 18px 0; }
+  details:first-of-type { border-top: 1px solid var(--line); }
+  summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; color: var(--accent); font-size: 1.3rem; line-height: 1; }
+  details[open] summary::after { content: "−"; }
+  details p { color: var(--muted); margin: 10px 0 0; max-width: 46em; }
+
+  /* stack */
+  .stack { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+  .stack span { font-size: .85rem; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted); }
+
+  footer { padding: 40px 0 56px; color: var(--faint); font-size: .88rem; }
+  footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#">
+      <span class="logo"><svg viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M3 4h10M3 8h10M3 12h6"/></svg></span>
+      Lecture Notes
+    </a>
+    <ul>
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#on-device">On your phone</a></li>
+      <li><a href="#faq">FAQ</a></li>
+    </ul>
+    <a class="btn btn-primary btn-sm" href="#download">Download</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div>
+      <span class="eyebrow">Android app · free · open source</span>
+      <h1>Listen in class.<br><em>Study</em> from the notes.</h1>
+      <p class="lede">Lecture Notes records or imports a lecture, transcribes it on your phone with Whisper, works out who's speaking, and turns it into a summary, flashcards and a quiz, using your slides too.</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://github.com/Dasa108/lecture-notes/releases/latest/download/LectureNotes.apk">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M6 11l6 6 6-6M4 21h16"/></svg>
+          Download APK
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/Dasa108/lecture-notes">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.2.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.6 18.3 5 18.3 5c.7 1.7.3 2.9.1 3.2.8.8 1.2 1.9 1.2 3.1 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .5z"/></svg>
+          Source code
+        </a>
+      </div>
+      <p class="meta">Version 0.1.0 · 27 MB · Android 8.0+ · 64-bit ARM phones</p>
+    </div>
+
+    <div class="phone" aria-hidden="true">
+      <div class="screen">
+        <div class="bar"><b>Week 7 · Search agents</b><span class="chip">AI</span></div>
+        <div class="tabs"><span class="on">Transcript</span><span>Notes</span><span>Slides</span></div>
+        <div class="line"><div class="who"><span class="lec">Lecturer</span><span class="t">12:04</span></div>An agent perceives its environment through sensors and acts on it through actuators.</div>
+        <div class="line"><div class="who"><span class="stu">Student</span><span class="t">12:31</span></div>So is a thermostat an agent?</div>
+        <div class="line"><div class="who"><span class="lec">Lecturer</span><span class="t">12:35</span></div>A very simple one. It's a reflex agent: it only looks at the current percept.</div>
+        <div class="line"><div class="who"><span class="lec">Lecturer</span><span class="t">13:02</span></div>Today we'll compare that with goal-based agents, which plan ahead…</div>
+        <div class="player">
+          <span class="play"><svg viewBox="0 0 10 10"><path d="M2 1l7 4-7 4z" fill="#fff"/></svg></span>
+          <span class="track"></span>
+          <span class="mono" style="font-size:.7rem;color:var(--faint)">12:35</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="how" class="alt">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>From a recording to a revision deck</h2>
+      <p>Most of the work happens on the phone. Only the finished transcript text leaves it, and only when you ask for notes.</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <h3>Capture</h3>
+        <p>Record in the app (it keeps going with the screen off), or import or share an audio or video file. Attach the slides or a PDF if you have them.</p>
+        <span class="where">On your phone</span>
+      </div>
+      <div class="step">
+        <h3>Transcribe</h3>
+        <p>whisper.cpp turns speech into timestamped text in the background, with a progress notification. Long lectures are split into chunks and survive restarts.</p>
+        <span class="where">On your phone</span>
+      </div>
+      <div class="step">
+        <h3>Label speakers</h3>
+        <p>sherpa-onnx separates the voices, so the lecturer and students' questions are told apart. Rename or merge speakers with a tap.</p>
+        <span class="where">On your phone</span>
+      </div>
+      <div class="step">
+        <h3>Make notes</h3>
+        <p>An AI model of your choice writes a summary, key terms, an outline, flashcards and a quiz, all linked back to the moment in the audio.</p>
+        <span class="where">Your own API key</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>Everything you need to revise</h2>
+      <p>Built for real lectures: hours long, several voices, slides on the projector, and a term's worth of subjects.</p>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></svg></div>
+        <h3>Record or import</h3>
+        <p>Record whole lectures, hours long, or bring in m4a, mp3, wav, ogg, opus, mp4, mkv, webm, mov and more. From video, only the audio is kept.</p>
+      </div>
+      <div class="card">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"/><circle cx="18" cy="16" r="3"/><path d="M20.2 18.2 22 20"/></svg></div>
+        <h3>Searchable transcript</h3>
+        <p>Every line has a timestamp. Tap one to hear it. Search across all lectures, and fix misheard words everywhere at once with find and replace.</p>
+      </div>
+      <div class="card">
+        <div class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></div>
+        <h3>Uses your slides</h3>
+        <p>Text is pulled from attached slides and PDFs, with on-device OCR for scanned pages, so the notes match the terms on the slides.</p>
+      </div>
+      <div class="card">
+        <div class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="14" height="10" rx="2"/><path d="M7 19h12a2 2 0 0 0 2-2V9"/></svg></div>
+        <h3>Flashcards that space out</h3>
+        <p>Cards go into a review deck with spaced repetition (SM-2), so you see hard cards often and easy ones rarely. Or shuffle everything before an exam.</p>
+      </div>
+      <div class="card">
+        <div class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.01"/></svg></div>
+        <h3>Practice quiz</h3>
+        <p>One question at a time, with the explanation and a link to hear that part of the lecture again. Your best score is kept.</p>
+      </div>
+      <div class="card">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></div>
+        <h3>Export and back up</h3>
+        <p>Export notes to Markdown, PDF or an Anki deck. Back up every lecture, recording and setting to one file, and restore it on a new phone.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="on-device" class="alt">
+  <div class="wrap split">
+    <div>
+      <h2>It checks your phone before it starts</h2>
+      <p class="lede" style="font-size:1.05rem;margin:16px 0 0">On first visit to Speech models, the app reads your phone's memory and storage, then times a 30-second test clip. It recommends the most accurate model that still transcribes a one-hour lecture in about 20 minutes.</p>
+      <ul class="ticks">
+        <li><b>Models that won't fit are blocked,</b> not just labelled. The limits come from measured peak memory, with at least 6× headroom, so a model isn't closed by Android halfway through a lecture.</li>
+        <li><b>Older phones are told plainly</b> if they can't transcribe on-device, and can still make notes from slides and PDFs.</li>
+        <li><b>Heavy work pauses when the phone gets hot</b> and picks up where it left off.</li>
+      </ul>
+    </div>
+    <div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Model</th><th>Download</th><th>Needs RAM</th><th>1-hour lecture</th></tr></thead>
+          <tbody>
+            <tr><td>Tiny</td><td class="num">32 MB</td><td class="num">2 GB</td><td class="num">≈ 3 min</td></tr>
+            <tr><td>Base</td><td class="num">60 MB</td><td class="num">3 GB</td><td class="num">≈ 5 min</td></tr>
+            <tr><td>Small <span class="rec">recommended</span></td><td class="num">190 MB</td><td class="num">4 GB</td><td class="num">≈ 14 min</td></tr>
+            <tr><td>Medium</td><td class="num">539 MB</td><td class="num">6 GB</td><td class="num">≈ 30 min</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">Times measured by the app's own speed test on a phone with a Snapdragon 8s Gen 4, with the app open. Your phone's results will differ, which is why it tests.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap split">
+    <div>
+      <h2>Your lectures stay yours</h2>
+      <p class="lede" style="font-size:1.05rem;margin:16px 0 0">There's no account, no server and no tracking. The app talks only to the services you set up.</p>
+    </div>
+    <ul class="ticks" style="margin:0">
+      <li><b>Audio never leaves the phone.</b> Transcription and speaker labelling run on the device.</li>
+      <li><b>You bring the AI.</b> Use a free Groq, Cerebras or OpenRouter key, a paid Claude key, or Ollama on your own computer over Wi-Fi.</li>
+      <li><b>Keys are encrypted</b> with the Android Keystore and left out of backups.</li>
+      <li><b>You see the cost first.</b> Each notes run shows an estimated token count before anything is sent.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="download" style="padding-top:24px">
+  <div class="wrap">
+    <div class="download">
+      <div>
+        <h2>Get the app</h2>
+        <p style="color:var(--muted);margin:12px 0 24px">Lecture Notes isn't on the Play Store yet, so you install the APK directly.</p>
+        <a class="btn btn-primary" href="https://github.com/Dasa108/lecture-notes/releases/latest/download/LectureNotes.apk">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M6 11l6 6 6-6M4 21h16"/></svg>
+          Download LectureNotes.apk
+        </a>
+        <dl class="facts">
+          <dt>Version</dt><dd>0.1.0</dd>
+          <dt>Size</dt><dd>27 MB (speech models download inside the app)</dd>
+          <dt>Needs</dt><dd>Android 8.0 or newer, 64-bit ARM (almost every phone since 2017)</dd>
+          <dt>SHA-256</dt><dd class="hash">e7833942e01e1bece3f429be62d6b715462189fb8f97cfcb53e56d94988c3b07</dd>
+        </dl>
+        <p class="note"><a href="https://github.com/Dasa108/lecture-notes/releases">All releases</a></p>
+      </div>
+      <div>
+        <h3>Installing</h3>
+        <ol>
+          <li>Open the download on your phone and tap the file.</li>
+          <li>If Android asks, allow your browser to <b>install unknown apps</b>. You can turn this off again afterwards.</li>
+          <li>Tap <b>Install</b>. Play Protect may warn about an unfamiliar app; choose <b>Install anyway</b>.</li>
+          <li>Open Lecture Notes, go to <b>Settings → Speech models</b>, and let it test your phone and download the recommended model.</li>
+          <li>For study notes, add an API key under <b>Settings → Notes AI</b>. Groq's is free and needs no card.</li>
+        </ol>
+        <p class="note">Updates install over the top and keep your lectures, as long as they come from this page.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap" style="max-width:820px">
+    <h2 style="margin-bottom:28px">Questions</h2>
+    <details>
+      <summary>Does it work offline?</summary>
+      <p>Recording, transcription, speaker labels, slide text, flashcard review and quizzes all work offline. You need a connection to download a speech model once, and to generate notes, unless you run Ollama on a computer on the same Wi-Fi.</p>
+    </details>
+    <details>
+      <summary>Do I have to pay for anything?</summary>
+      <p>No. The app is free, and Groq, Cerebras and OpenRouter all have free tiers that are enough for regular lectures. The app paces itself to stay inside their per-minute limits. Claude is the paid option if you want the best notes.</p>
+    </details>
+    <details>
+      <summary>What languages does it understand?</summary>
+      <p>English. The speech models are Whisper's English-only versions, which are more accurate for English at the same size.</p>
+    </details>
+    <details>
+      <summary>How long does a lecture take to process?</summary>
+      <p>It depends on the phone and the model. The app measures your phone and shows an estimate for each model before you download it. On a recent mid-range phone, a one-hour lecture takes around 15 minutes with the recommended model.</p>
+    </details>
+    <details>
+      <summary>It got a word wrong in every line. Can I fix it?</summary>
+      <p>Yes. Use find and replace in the transcript, with whole-word and match-case options. You can also edit single lines, and rename or merge speakers. Make the notes after fixing, and they'll use the corrected text.</p>
+    </details>
+    <details>
+      <summary>What happens if I switch phones?</summary>
+      <p>Use <b>Settings → Backup &amp; restore</b> to save everything to one file, including recordings, transcripts, notes, flashcard progress and settings. Restore it on the new phone. API keys aren't included, so add them again.</p>
+    </details>
+  </div>
+</section>
+
+<section class="alt">
+  <div class="wrap">
+    <div class="section-head" style="margin-bottom:0">
+      <h2>How it's built</h2>
+      <p>A native Android app in Kotlin with Jetpack Compose. Speech recognition is whisper.cpp compiled for ARM with the Android NDK and called over JNI. Long jobs run in WorkManager so they survive the app closing.</p>
+    </div>
+    <div class="stack">
+      <span>Kotlin</span><span>Jetpack Compose</span><span>whisper.cpp</span><span>sherpa-onnx</span><span>Room</span><span>WorkManager</span><span>ML Kit OCR</span><span>Android NDK · CMake</span><span>Gradle</span><span>Robolectric</span>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>Lecture Notes · built by <a href="https://github.com/Dasa108">Dasa108</a></span>
+    <span><a href="https://github.com/Dasa108/lecture-notes">Source on GitHub</a></span>
+  </div>
+</footer>
+
+</body>
+</html>
