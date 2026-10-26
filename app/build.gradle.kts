@@ -53,6 +53,8 @@ android {
             ndk { abiFilters += "arm64-v8a" }
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Debug key only so the project still configures without the release key; the check at the
+            // end of this file stops any release build that would actually be signed with it.
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
         // The optimised (R8) release code under its own app id, so it can be smoke-tested on a phone
@@ -128,4 +130,18 @@ dependencies {
     // Real Android SQLite and files on the JVM, for backup/restore.
     testImplementation("org.robolectric:robolectric:4.13")
     testImplementation("androidx.test:core:1.6.1")
+}
+
+// A release signed with any other key can't update the installed app, so building one without the
+// release key is an error rather than a silent fallback to the debug key.
+gradle.taskGraph.whenReady {
+    val releaseKey = android.signingConfigs.findByName("release")?.storeFile
+    val packagesRelease = allTasks.any { it.project == project && it.name in setOf("packageRelease", "signReleaseBundle") }
+    if (packagesRelease && releaseKey?.exists() != true) {
+        throw GradleException(
+            "Release builds need the release key. Put keystore.properties in the project root " +
+                "(storeFile, storePassword, keyAlias, keyPassword) and make sure storeFile exists. " +
+                "Debug and releaseTest builds don't need it."
+        )
+    }
 }
