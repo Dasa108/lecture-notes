@@ -71,6 +71,26 @@ class RecommendTest {
     }
 
     @Test
+    fun modelsTooBigForMemoryAreBlockedWithAReason() {
+        val threeGb = phone(3.0)
+        assertNull(WhisperModels.whyNot(model("base.en-q5_1"), threeGb))
+        val small = WhisperModels.whyNot(model("small.en-q5_1"), threeGb)!!
+        assertTrue(small, small.startsWith("Needs 4 GB of RAM; this phone has 3.0 GB"))
+        // Memory limits apply even to a model that's already downloaded: it would still be killed.
+        assertTrue(WhisperModels.whyNot(model("medium.en-q5_0"), threeGb, downloaded = true)!!.contains("RAM"))
+    }
+
+    @Test
+    fun storageOnlyMattersBeforeDownloading() {
+        val nearlyFull = phone(8.0, freeGb = 0.2) // ~205 MB free: Small (190 MB) needs ~380 MB to download
+        assertTrue(WhisperModels.whyNot(model("small.en-q5_1"), nearlyFull)!!.contains("more free storage"))
+        assertNull(WhisperModels.whyNot(model("small.en-q5_1"), nearlyFull, downloaded = true))
+        val downloadedSmall: (WhisperModel) -> Boolean = { it.id == "small.en-q5_1" }
+        assertEquals("small.en-q5_1", WhisperModels.recommend(nearlyFull, fastPhone, downloadedSmall)?.id)
+        assertEquals("base.en-q5_1", WhisperModels.recommend(nearlyFull, fastPhone)?.id)
+    }
+
+    @Test
     fun benchResultRoundTrips() {
         val r = BenchResult(612.5, 1388.0, 6, 123L)
         assertEquals(r, BenchResult.parse(r.toJson()))

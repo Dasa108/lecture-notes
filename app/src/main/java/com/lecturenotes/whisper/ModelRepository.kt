@@ -25,9 +25,14 @@ class ModelRepository(private val context: Context) {
 
     fun downloaded(): List<WhisperModel> = WhisperModels.all.filter(::isDownloaded)
 
-    /** The model to transcribe with: the user's choice if downloaded, else the best downloaded one. */
+    private val device by lazy { DeviceInfo.read(context) }
+
+    /** Downloaded and small enough for this phone's memory. */
+    fun isUsable(model: WhisperModel) = isDownloaded(model) && WhisperModels.fitsMemory(model, device)
+
+    /** The model to transcribe with: the user's choice if usable, else the best usable one. */
     fun activeModel(): WhisperModel? =
-        WhisperModels.byId(_selectedId.value)?.takeIf(::isDownloaded) ?: downloaded().lastOrNull()
+        WhisperModels.byId(_selectedId.value)?.takeIf(::isUsable) ?: downloaded().lastOrNull(::isUsable)
 
     fun select(model: WhisperModel) {
         prefs.edit { putString(KEY_SELECTED, model.id) }

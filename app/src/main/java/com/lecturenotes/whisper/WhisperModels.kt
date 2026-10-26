@@ -4,6 +4,12 @@ data class WhisperModel(
     val id: String,
     val displayName: String,
     val sizeBytes: Long,
+    /**
+     * Least total phone RAM to download and run this model. Measured peak memory while transcribing
+     * (whisper.cpp, 30 s clip): Tiny 104 MB, Base 176 MB, Small 369 MB, Medium 843 MB, plus ~80 MB for
+     * the app itself (Tiny peaked at 181 MB in the app on the test phone). Android kills large apps
+     * long before RAM is full, so each minimum leaves at least 6× the model's peak as headroom.
+     */
     val minRamGb: Double,
     /**
      * Encoder cost and decoding cost per 30 s window, both as multiples of *Tiny's encode time*, used
@@ -40,10 +46,23 @@ object WhisperModels {
 
     fun byId(id: String?): WhisperModel? = all.firstOrNull { it.id == id }
 
-    /** Models that fit this phone's memory and storage. */
-    fun fitting(device: DeviceInfo): List<WhisperModel> {
-        val ram = device.totalRamGb + 0.5 // phones report a little less than the advertised RAM
-        return all.filter { it.minRamGb <= ram && it.sizeBytes * 2 < device.freeStorageBytes }
+    /** Enough RAM to run [model] without Android killing the app. Phones report a little less than advertised. */
+    fun fitsMemory(model: WhisperModel, device: DeviceInfo) = model.minRamGb <= device.totalRamGb + 0.5
+
+    /** Room to download [model] (the download and a margin). Irrelevant once it's downloaded. */
+    fun fitsStorage(model: WhisperModel, device: DeviceInfo) = model.sizeBytes * 2 < device.freeStorageBytes
+
+    /** Models this phone can use: enough memory, and either already [downloaded] or room to download. */
+    fun fitting(device: DeviceInfo, downloaded: (WhisperModel) -> Boolean = { false }): List<WhisperModel> =
+        all.filter { fitsMemory(it, device) && (downloaded(it) || fitsStorage(it, device)) }
+
+    /** Why [model] can't be downloaded or used on this phone, or null if it can. */
+    fun whyNot(model: WhisperModel, device: DeviceInfo, downloaded: Boolean = false): String? = when {
+        !fitsMemory(model, device) ->
+            "Needs %.0f GB of RAM; this phone has %.1f GB, so it could be closed mid-transcription.".format(model.minRamGb, device.totalRamGb)
+        !downloaded && !fitsStorage(model, device) ->
+            "Needs ${(model.sizeBytes * 2 - device.freeStorageBytes) / 1_048_576 + 1} MB more free storage to download."
+        else -> null
     }
 
     /**
@@ -51,15 +70,19 @@ object WhisperModels {
      * [TARGET_MINUTES_PER_HOUR] with the app open, or the fastest one if none is that quick.
      * Without one: a memory-based guess (never Medium). Null when no model fits this phone.
      */
-    fun recommend(device: DeviceInfo, bench: BenchResult? = null): WhisperModel? {
-        val fits = fitting(device).ifEmpty { return null }
+    fun recommend(
+        device: DeviceInfo,
+        bench: BenchResult? = null,
+        downloaded: (WhisperModel) -> Boolean = { false },
+    ): WhisperModel? {
+        val fits = fitting(device, downloaded).ifEmpty { return null }
         if (bench == null) return fits.lastOrNull { it.id != "medium.en-q5_0" } ?: fits.first()
         return fits.lastOrNull { bench.minutesPerHour(it) <= TARGET_MINUTES_PER_HOUR } ?: fits.first()
     }
 
     /** Why no model can run on this phone, or null if at least one fits. */
-    fun unsupportedReason(device: DeviceInfo): String? {
-        if (fitting(device).isNotEmpty()) return null
+    fun unsupportedReason(device: DeviceInfo, downloaded: (WhisperModel) -> Boolean = { false }): String? {
+        if (fitting(device, downloaded).isNotEmpty()) return null
         val smallest = all.first()
         return if (device.totalRamGb + 0.5 < smallest.minRamGb) {
             "On-device transcription needs at least %.0f GB of RAM, and this phone has %.1f GB."

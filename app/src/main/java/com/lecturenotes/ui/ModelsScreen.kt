@@ -72,7 +72,8 @@ data class ModelRow(
     val recommended: Boolean,
     /** Estimated minutes per hour of lecture with the app open, once the speed check has run. */
     val minutesPerHour: Double?,
-    val fits: Boolean,
+    /** Why this model can't be downloaded or used on this phone, or null if it can. */
+    val blocked: String?,
 )
 
 sealed interface CheckState {
@@ -87,7 +88,7 @@ class ModelsViewModel(application: Application) : AndroidViewModel(application) 
     val device = DeviceInfo.read(application)
     val bench = repo.bench
     /** Why this phone can't run any model, or null. */
-    val unsupported = WhisperModels.unsupportedReason(device)
+    val unsupported = WhisperModels.unsupportedReason(device, repo::isDownloaded)
     private val _check = MutableStateFlow<CheckState>(CheckState.Idle)
     val check = _check.asStateFlow()
 
@@ -121,10 +122,12 @@ class ModelsViewModel(application: Application) : AndroidViewModel(application) 
 
     val rows = combine(workStates, repo.selectedId, repo.changes, repo.bench) { work, _, _, b ->
         val active = repo.activeModel()
-        val recommended = WhisperModels.recommend(device, b)
-        val fitting = WhisperModels.fitting(device)
+        val recommended = WhisperModels.recommend(device, b, repo::isDownloaded)
         WhisperModels.all.map { model ->
-            ModelRow(model, stateOf(model, work[model.id]), active == model, model == recommended, b?.minutesPerHour(model), model in fitting)
+            ModelRow(
+                model, stateOf(model, work[model.id]), active == model, model == recommended, b?.minutesPerHour(model),
+                WhisperModels.whyNot(model, device, repo.isDownloaded(model)),
+            )
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -145,7 +148,9 @@ class ModelsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun download(model: WhisperModel) = Jobs.downloadModel(app, model)
+    fun download(model: WhisperModel) {
+        if (WhisperModels.whyNot(model, device) == null) Jobs.downloadModel(app, model)
+    }
     fun cancel(model: WhisperModel) = Jobs.cancelDownload(app, model)
     fun select(model: WhisperModel) = repo.select(model)
     fun delete(model: WhisperModel) = repo.delete(model)
@@ -265,7 +270,7 @@ private fun ModelCard(
         Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (row.state == ModelState.Downloaded) {
-                    RadioButton(selected = row.selected, onClick = { onSelect(m) })
+                    RadioButton(selected = row.selected, onClick = { onSelect(m) }, enabled = row.blocked == null)
                 }
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -279,16 +284,16 @@ private fun ModelCard(
                         }
                     }
                     Text(m.description, style = MaterialTheme.typography.bodySmall)
-                    val notes = listOfNotNull(
-                        row.minutesPerHour?.let { "1-hour lecture ≈ ${formatMinutes(it)} with the app open" },
-                        if (!row.fits) "too big for this phone's memory or free storage" else null,
-                    )
-                    if (notes.isNotEmpty()) {
-                        Text(
-                            notes.joinToString(" · "),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (row.fits) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                        )
+                    if (row.blocked != null) {
+                        Text(row.blocked, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+                    } else {
+                        row.minutesPerHour?.let {
+                            Text(
+                                "1-hour lecture ≈ ${formatMinutes(it)} with the app open",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                     }
                 }
                 when (val s = row.state) {
@@ -296,7 +301,7 @@ private fun ModelCard(
                         Icon(Icons.Outlined.Delete, "Delete ${m.displayName} model")
                     }
                     is ModelState.Downloading -> TextButton(onClick = { onCancel(m) }) { Text("Cancel") }
-                    else -> FilledTonalButton(onClick = { onDownload(m) }) {
+                    else -> FilledTonalButton(onClick = { onDownload(m) }, enabled = row.blocked == null) {
                         Text(if (s is ModelState.Failed) "Retry" else "Download")
                     }
                 }
